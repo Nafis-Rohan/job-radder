@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# secrets
+.env
+
+# build output
+dist/
+
+# logs
+*.log
+
+# local backups
+backups/
+
+# AI-only files (not for GitHub)
+CLAUDE.md
+.claude/
+docs/rule.md
+docs/memory.md
+docs/tasks.md
+docs/plan.md
+docs/prd.md
+docs/architecture.md
