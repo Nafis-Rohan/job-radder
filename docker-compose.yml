@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: jobradar_local_pw
       POSTGRES_DB: jobradar
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - jobradar_pgdata:/var/lib/postgresql/data
 
