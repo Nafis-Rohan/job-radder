@@ -26,3 +26,9 @@ export async function login(req, res) {
 export function me(req, res) {
   res.json({ user: req.user });
 }
+
+export function logout(req, res) {
+  const { maxAge, ...options } = cookieOptions();
+  res.clearCookie(COOKIE_NAME, options);
+  res.json({ ok: true });
+}
