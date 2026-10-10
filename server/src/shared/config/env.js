@@ -8,6 +8,7 @@ const schema = z.object({
   APP_URL: z.string().url().default('http://localhost:5173'),
   SCAN_INTERVAL_HOURS: z.coerce.number().positive().default(6),
   DATABASE_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(32),
 });
 
 const result = schema.safeParse(process.env);

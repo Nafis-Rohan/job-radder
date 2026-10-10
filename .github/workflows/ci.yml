@@ -26,6 +26,7 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://ci:ci@localhost:5432/jobradar_ci
+      JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else-0000000000000000000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
