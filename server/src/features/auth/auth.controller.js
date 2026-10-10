@@ -1,5 +1,5 @@
 import * as authService from './auth.service.js';
-import { COOKIE_NAME, signToken, cookieOptions } from './auth.tokens.js';
+import { COOKIE_NAME, signToken, cookieOptions } from '../../shared/utils/tokens.js';
 
 export async function login(req, res) {
   const { username, password } = req.body;
@@ -21,4 +21,8 @@ export async function login(req, res) {
 
   res.cookie(COOKIE_NAME, signToken(result.user), cookieOptions());
   res.json({ user: result.user });
+}
+
+export function me(req, res) {
+  res.json({ user: req.user });
 }
