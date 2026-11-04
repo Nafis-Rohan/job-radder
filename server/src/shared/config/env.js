@@ -9,6 +9,7 @@ const schema = z.object({
   SCAN_INTERVAL_HOURS: z.coerce.number().positive().default(6),
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(32),
+  ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'must be 64 hex characters'),
 });
 
 const result = schema.safeParse(process.env);
