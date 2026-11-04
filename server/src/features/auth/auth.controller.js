@@ -14,6 +14,11 @@ function startSession(res, user) {
   res.json({ user });
 }
 
+function clearSession(res) {
+  const { maxAge, ...options } = cookieOptions();
+  res.clearCookie(COOKIE_NAME, options);
+}
+
 export async function login(req, res) {
   const { username, password } = req.body;
 
@@ -29,6 +34,8 @@ export async function login(req, res) {
   }
 
   if (result.status === 'two_factor_required') {
+    // A new login has started: drop any older session in this browser until 2FA is done.
+    clearSession(res);
     return res.json({ twoFactorRequired: true, tempToken: signTempToken(result.user) });
   }
 
@@ -65,16 +72,18 @@ export function me(req, res) {
 }
 
 export function logout(req, res) {
-  const { maxAge, ...options } = cookieOptions();
-  res.clearCookie(COOKIE_NAME, options);
+  clearSession(res);
   res.json({ ok: true });
 }
 
 export async function setupTwoFactor(req, res) {
-  const result = await twoFactorService.setup(req.user.id);
+  const result = await twoFactorService.setup(req.user.id, req.body.password);
 
   if (result.status === 'already_enabled') {
     return res.status(409).json({ error: '2FA is already enabled' });
+  }
+  if (result.status === 'invalid_password') {
+    return res.status(401).json({ error: 'Invalid password' });
   }
   if (result.status !== 'ok') {
     return res.status(404).json({ error: 'User not found' });
@@ -95,6 +104,9 @@ export async function enableTwoFactor(req, res) {
   }
   if (result.status === 'invalid_code') {
     return res.status(400).json({ error: 'Invalid code' });
+  }
+  if (result.status === 'conflict') {
+    return res.status(409).json({ error: '2FA setup changed. Run setup again.' });
   }
   if (result.status !== 'ok') {
     return res.status(404).json({ error: 'User not found' });

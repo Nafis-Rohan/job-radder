@@ -7,6 +7,10 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+export const twoFactorSetupSchema = z.object({
+  password: z.string().min(1).max(200),
+});
+
 export const twoFactorCodeSchema = z.object({ code });
 
 export const loginTwoFactorSchema = z.object({
