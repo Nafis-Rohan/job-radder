@@ -25,14 +25,22 @@ export async function isLimitReached(userId) {
 
 // text = plain text read from the PDF. It is stored encrypted; the PDF itself is not kept.
 export async function createCv(userId, { text, name }) {
-  if (await isLimitReached(userId)) return { status: 'limit' };
-
   const analysis = analyzeCv(text);
-  const cv = await prisma.cv.create({
-    data: { userId, name, textEnc: encrypt(text), ...analysis },
-    select: CV_FIELDS,
+  const textEnc = encrypt(text);
+
+  // Count + insert in one transaction. The advisory lock makes two uploads of the same
+  // user wait for each other, so the limit cannot be passed by a race.
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+    const count = await tx.cv.count({ where: { userId } });
+    if (count >= MAX_CVS_PER_USER) return { status: 'limit' };
+
+    const cv = await tx.cv.create({
+      data: { userId, name, textEnc, ...analysis },
+      select: CV_FIELDS,
+    });
+    return { status: 'ok', cv };
   });
-  return { status: 'ok', cv };
 }
 
 export function listCvs(userId) {

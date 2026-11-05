@@ -1,5 +1,7 @@
 import multer from 'multer';
 
+const PDF_MIME_TYPES = /^application\/(pdf|x-pdf|octet-stream)$/i;
+
 export const MAX_CV_BYTES = 2 * 1024 * 1024;
 
 // memoryStorage: the PDF stays in RAM only and is never written to disk.
@@ -7,7 +9,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_CV_BYTES, files: 1, fields: 5 },
   fileFilter(req, file, callback) {
-    if (file.mimetype !== 'application/pdf') {
+    // Some clients send a generic type; the real check is the %PDF- header in parseCvPdf.
+    if (!PDF_MIME_TYPES.test(file.mimetype)) {
       const error = new Error('Only PDF files are allowed');
       error.status = 400;
       return callback(error);

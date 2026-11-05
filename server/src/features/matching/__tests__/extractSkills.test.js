@@ -49,6 +49,17 @@ test('go is only found as golang, not as the plain word', () => {
 test('most mentioned skills come first', () => {
   const skills = extractSkills('react react react vue docker');
   assert.equal(skills[0], 'react');
+  assert.ok(skills.indexOf('react') < skills.indexOf('vue.js'));
+  assert.ok(skills.indexOf('react') < skills.indexOf('docker'));
+});
+
+test('one mention counts once, even if the name and an alias both match', () => {
+  const skills = extractSkills('node.js docker docker');
+  assert.deepEqual(skills.slice(0, 2), ['docker', 'node.js']);
+});
+
+test('LLM or LangChain alone does not mean OpenAI', () => {
+  assert.ok(!extractSkills('I built LLM apps with LangChain').includes('openai'));
 });
 
 test('returns an empty list for empty or unrelated text', () => {

@@ -110,7 +110,7 @@
   "power bi": ["powerbi"],
   "tableau": [],
   "excel": ["microsoft excel"],
-  "openai": ["llm", "llms", "large language model", "large language models", "langchain"],
+  "openai": [],
   "stripe": [],
   "shopify": [],
   "wordpress": []

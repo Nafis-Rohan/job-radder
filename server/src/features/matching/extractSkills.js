@@ -12,11 +12,12 @@ const SKILLS = Object.entries(skills).map(([name, aliases]) => ({
 }));
 
 function countMentions(text, patterns) {
-  let count = 0;
+  // Count each place in the text once, even if the name and an alias both match there.
+  const places = new Set();
   for (const pattern of patterns) {
-    for (const _ of text.matchAll(pattern)) count += 1;
+    for (const match of text.matchAll(pattern)) places.add(match.index);
   }
-  return count;
+  return places.size;
 }
 
 // Returns canonical skill names found in the text, most mentioned first.

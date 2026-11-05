@@ -14,3 +14,13 @@ function failureLimiter(message) {
 
 export const loginLimiter = failureLimiter('Too many login attempts. Try again later.');
 export const twoFactorLimiter = failureLimiter('Too many code attempts. Try again later.');
+
+// CV uploads: 10 per hour per logged-in user (a PDF is read into memory, so keep it rare).
+export const cvUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  keyGenerator: (req) => req.user.id,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many CV uploads. Try again later.' },
+});

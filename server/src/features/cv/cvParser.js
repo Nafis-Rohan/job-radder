@@ -1,7 +1,9 @@
 import { PDFParse } from 'pdf-parse';
+import { logger } from '../../shared/utils/logger.js';
 
 const MAX_TEXT_CHARS = 100_000;
 const MIN_TEXT_CHARS = 50;
+const MAX_PAGES = 10; // a CV is short; more pages cost CPU and memory for nothing
 
 // status 422 so the error handler sends this message to the client (it is not a server bug)
 export class CvParseError extends Error {
@@ -35,7 +37,7 @@ export async function parseCvPdf(buffer) {
 
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
-    const result = await parser.getText();
+    const result = await parser.getText({ first: MAX_PAGES });
     const text = cleanText(result.text);
 
     if (text.length < MIN_TEXT_CHARS) {
@@ -46,6 +48,8 @@ export async function parseCvPdf(buffer) {
     return text.slice(0, MAX_TEXT_CHARS);
   } catch (err) {
     if (err instanceof CvParseError) throw err;
+    // Log the real reason (never the CV text), so a library bug is not hidden as "bad file".
+    logger.warn({ errName: err?.name, errMessage: err?.message }, 'PDF parser failed');
     throw new CvParseError('Could not read this PDF. It may be damaged or password protected.');
   } finally {
     await parser.destroy().catch(() => {});

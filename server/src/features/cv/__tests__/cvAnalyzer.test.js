@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeCv } from '../cvAnalyzer.js';
+import { extractExperience } from '../../matching/extractExperience.js';
 import { SAMPLE_CV_LINES } from './makePdf.js';
 
 const NOW = new Date('2026-06-15T00:00:00Z');
@@ -15,6 +16,10 @@ test('finds the skills in the CV', () => {
 
 test('reads the years: the written "6+ years" beats the date estimate', () => {
   assert.ok(analysis.yearsExp >= 6, `got ${analysis.yearsExp}`);
+});
+
+test('the written "6+ years" is read as exactly 6', () => {
+  assert.equal(extractExperience(SAMPLE_CV_LINES.join('\n')), 6);
 });
 
 test('reads the level from the headline', () => {
