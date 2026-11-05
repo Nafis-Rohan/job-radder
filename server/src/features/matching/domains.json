@@ -1,0 +1,19 @@
+{
+  "fintech": ["fintech", "payment", "payments", "banking", "bank", "mobile banking", "mfs", "bkash", "nagad", "digital wallet", "lending", "loan", "microfinance", "insurance", "insurtech", "remittance", "trading platform", "stock market", "kyc"],
+  "e-commerce": ["e-commerce", "ecommerce", "e commerce", "online shop", "marketplace", "retail", "shopify", "daraz", "checkout", "shopping cart", "order management", "inventory"],
+  "healthcare": ["healthcare", "health care", "healthtech", "hospital", "telemedicine", "telehealth", "medical", "clinic", "pharmacy", "pharma", "patient", "ehr", "hl7"],
+  "education": ["edtech", "e-learning", "elearning", "lms", "learning management", "online learning", "education technology", "school management"],
+  "logistics": ["logistics", "courier", "food delivery", "parcel delivery", "supply chain", "fleet", "last mile", "ride sharing", "ride-sharing", "ride hailing", "ride-hailing", "warehouse"],
+  "telecom": ["telecom", "telecommunication", "telecommunications", "telco", "isp", "voip", "sms gateway", "5g", "grameenphone", "robi", "banglalink"],
+  "saas": ["saas", "b2b", "multi-tenant", "multitenant", "crm", "erp", "hrm", "hr tech", "project management tool"],
+  "gaming": ["gaming", "game development", "game server", "unreal", "esports", "multiplayer"],
+  "ai-ml": ["machine learning", "deep learning", "nlp", "natural language processing", "computer vision", "llm", "generative ai", "artificial intelligence", "data science", "recommendation engine"],
+  "cybersecurity": ["cybersecurity", "cyber security", "infosec", "penetration testing", "siem"],
+  "blockchain": ["blockchain", "web3", "crypto", "cryptocurrency", "smart contract", "smart contracts", "defi", "nft"],
+  "travel": ["travel", "tourism", "hotel booking", "booking platform", "airline", "flight booking"],
+  "media": ["streaming", "ott", "video platform", "news portal", "publishing", "content management"],
+  "government": ["government", "e-governance", "egovernment", "public sector", "govtech", "gov tech"],
+  "real-estate": ["real estate", "real-estate", "proptech", "property management"],
+  "agritech": ["agritech", "agriculture", "farming", "agtech"],
+  "iot": ["iot", "internet of things", "embedded", "firmware", "smart home", "telemetry"]
+}
