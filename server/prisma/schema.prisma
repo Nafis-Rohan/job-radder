@@ -20,6 +20,15 @@ enum Role {
   DEMO
 }
 
+enum Level {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  UNKNOWN
+}
+
 model User {
   id             String    @id @default(cuid())
   username       String    @unique
@@ -32,6 +41,7 @@ model User {
   telegramChatId String?
   alertThreshold Int       @default(50)
   createdAt      DateTime  @default(now())
+  cvs            Cv[]
 }
 
 model LoginEvent {
@@ -42,4 +52,21 @@ model LoginEvent {
   ip        String?
   userAgent String?
   createdAt DateTime @default(now())
+}
+
+model Cv {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  textEnc   String
+  skills    String[]
+  keywords  String[]
+  yearsExp  Float
+  level     Level
+  domains   String[]
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
