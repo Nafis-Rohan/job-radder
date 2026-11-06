@@ -53,11 +53,36 @@ test('counts bad jobs and never crashes on them', () => {
   assert.equal(invalid, bad.length);
 });
 
-test('keeps only valid dates and trims long text', () => {
+test('keeps valid dates, drops invalid ones, and trims long text', () => {
+  const posted = new Date('2026-11-05T10:00:00Z');
   const { rows } = prepareJobs([
-    { ...job, postedAt: new Date('nope'), deadline: '2026-01-01', title: 'T'.repeat(500) },
+    { ...job, postedAt: posted, deadline: new Date('nope'), title: 'T'.repeat(500) },
+    { ...job, url: 'https://example.com/jobs/9', title: 'Other', deadline: '2026-01-01' },
   ]);
-  assert.equal(rows[0].postedAt, null);
+  assert.equal(rows[0].postedAt.getTime(), posted.getTime());
   assert.equal(rows[0].deadline, null);
   assert.equal(rows[0].title.length, 300);
+  assert.equal(rows[1].deadline, null); // a string is not a Date
+});
+
+test('two titles that only differ after the length limit are not the same job', () => {
+  const long = 'T'.repeat(400);
+  const { rows, repeated } = prepareJobs([
+    { ...job, title: `${long}A` },
+    { ...job, url: 'https://example.com/jobs/2', title: `${long}B` },
+  ]);
+  assert.equal(rows.length, 2);
+  assert.equal(repeated, 0);
+});
+
+test("the site's own skill tags count as skills", () => {
+  const { rows } = prepareJobs([{ ...job, description: 'Join our team.', skillTags: 'Python, Docker' }]);
+  assert.ok(rows[0].skills.includes('python'));
+  assert.ok(rows[0].skills.includes('docker'));
+});
+
+test('remote jobs start as UNKNOWN eligibility, other jobs have none', () => {
+  const { rows } = prepareJobs([job, { ...job, url: 'https://example.com/jobs/3', title: 'Office job', isRemote: false }]);
+  assert.equal(rows[0].eligibility, 'UNKNOWN');
+  assert.equal(rows[1].eligibility, null);
 });

@@ -14,6 +14,14 @@ test('decodes entities', () => {
   assert.equal(htmlToText('R&amp;D &lt;team&gt; &quot;hi&quot; &#39;x&#39; a&nbsp;b'), 'R&D <team> "hi" \'x\' a b');
 });
 
+test('decodes common punctuation entities', () => {
+  assert.equal(htmlToText('Dev &mdash; remote &rsquo;s &hellip;'), "Dev - remote 's ...");
+});
+
+test('a number outside the Unicode range does not crash', () => {
+  assert.equal(htmlToText('a&#99999999;b&#x110000;c'), 'abc');
+});
+
 test('drops script and style content', () => {
   assert.equal(htmlToText('<style>p{color:red}</style>Text<script>alert(1)</script>'), 'Text');
 });

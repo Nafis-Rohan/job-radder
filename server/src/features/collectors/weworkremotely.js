@@ -50,6 +50,7 @@ export async function parseFeed(xml) {
       description: htmlToText(item.content || item.description || ''),
       postedAt: toDate(item.isoDate || item.pubDate),
       deadline: toDate(item.expires_at),
+      skillTags: item.skills?.trim() || undefined, // the site's own tags, e.g. "Python, Docker"
       isRemote: true,
       remoteScope: region, // raw region text, e.g. "Anywhere in the World"; judged in Phase 12
     };

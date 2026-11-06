@@ -30,6 +30,8 @@ async function main() {
 
   console.log('\nDone.', totals);
   console.log('Jobs in the database now:', await prisma.job.count());
+  // an automated caller must see that a source failed
+  if (totals.failedSources > 0) process.exitCode = 1;
 }
 
 main()

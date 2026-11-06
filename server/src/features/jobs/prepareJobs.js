@@ -39,7 +39,8 @@ export function prepareJobs(jobs) {
     }
 
     const location = clean(job.location, LIMITS.location);
-    const hash = jobHash({ company, title, location });
+    // hash the full text, before it is cut to the column limits
+    const hash = jobHash({ company: job.company, title: job.title, location: job.location });
     if (seenHashes.has(hash) || seenUrls.has(url)) {
       repeated += 1;
       continue;
@@ -50,6 +51,7 @@ export function prepareJobs(jobs) {
     const description = clean(job.description, LIMITS.description);
     const text = `${title}\n${description ?? ''}`;
     const years = extractExperience(text);
+    const skillText = `${text}\n${clean(job.skillTags, 500) ?? ''}`; // + the site's own tags
 
     rows.push({
       source: job.source,
@@ -61,12 +63,14 @@ export function prepareJobs(jobs) {
       description,
       deadline: validDate(job.deadline),
       experienceText: clean(job.experienceText, 200),
-      skills: extractSkills(text),
+      skills: extractSkills(skillText),
       level: detectLevel(title, years),
       domains: detectDomain(text),
       postedAt: validDate(job.postedAt),
       isRemote: Boolean(job.isRemote),
       remoteScope: clean(job.remoteScope, LIMITS.remoteScope),
+      // remote jobs start as UNKNOWN until Phase 12 judges them; other jobs stay empty (NULL)
+      eligibility: job.isRemote ? 'UNKNOWN' : null,
     });
   }
 

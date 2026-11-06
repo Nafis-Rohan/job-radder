@@ -10,6 +10,7 @@ const XML = `<?xml version="1.0" encoding="UTF-8"?>
       <title>Acme: Senior Node.js Engineer</title>
       <region>Anywhere in the World</region>
       <country>Bangladesh</country>
+      <skills>Node.js, Docker</skills>
       <description>&lt;p&gt;We need 5+ years of &lt;strong&gt;Node.js&lt;/strong&gt; and Docker.&lt;/p&gt;</description>
       <pubDate>Thu, 05 Nov 2026 17:12:27 +0000</pubDate>
       <expires_at>Sat, 05 Dec 2026 17:12:27 +0000</expires_at>
@@ -35,6 +36,7 @@ test('turns feed items into normalized jobs', async () => {
   assert.equal(job.isRemote, true);
   assert.equal(job.remoteScope, 'Anywhere in the World');
   assert.equal(job.location, 'Bangladesh');
+  assert.equal(job.skillTags, 'Node.js, Docker');
   assert.equal(job.description, 'We need 5+ years of Node.js and Docker.');
   assert.equal(job.postedAt.toISOString(), '2026-11-05T17:12:27.000Z');
   assert.equal(job.deadline.toISOString(), '2026-12-05T17:12:27.000Z');

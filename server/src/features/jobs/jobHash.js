@@ -9,8 +9,10 @@ function normalize(value) {
 }
 
 // The same real job found on two sites (or twice on one site) gets the same hash.
-// hash = sha256(company | title | location). A missing location counts as empty text.
+// hash = sha256 of the normalized [company, title, location]. A missing location counts as
+// empty text. The fields go in as a JSON list, so a "|" inside a title cannot move the
+// border between two fields.
 export function jobHash({ company, title, location }) {
-  const key = [company, title, location].map(normalize).join('|');
+  const key = JSON.stringify([company, title, location].map(normalize));
   return createHash('sha256').update(key).digest('hex');
 }

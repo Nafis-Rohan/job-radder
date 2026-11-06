@@ -12,8 +12,20 @@ const client = axios.create({
   headers: { 'User-Agent': USER_AGENT, Accept: '*/*' },
 });
 
+const bareHost = (host) => host.replace(/^www\./, '');
+
 // GET a URL and return the body as text. Throws on network errors and on 4xx/5xx.
+// A redirect is followed only inside the same site over https, so a feed can never send us
+// to another (for example internal) address.
 export async function httpGet(url, options = {}) {
-  const response = await client.get(url, options);
+  const originHost = bareHost(new URL(url).hostname);
+  const response = await client.get(url, {
+    ...options,
+    beforeRedirect(redirect) {
+      if (redirect.protocol !== 'https:' || bareHost(redirect.hostname) !== originHost) {
+        throw new Error('Redirect to another site was blocked');
+      }
+    },
+  });
   return response.data;
 }

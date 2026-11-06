@@ -29,6 +29,12 @@ test('missing location equals empty location', () => {
   assert.equal(jobHash({ ...job, location: null }), jobHash({ ...job, location: '' }));
 });
 
+test('a "|" inside a field cannot move the border between fields', () => {
+  const a = jobHash({ company: 'a|b', title: 'c', location: 'd' });
+  const b = jobHash({ company: 'a', title: 'b|c', location: 'd' });
+  assert.notEqual(a, b);
+});
+
 test('fields cannot be shifted to fake the same hash', () => {
   const a = jobHash({ company: 'a b', title: 'c', location: 'd' });
   const b = jobHash({ company: 'a', title: 'b c', location: 'd' });
