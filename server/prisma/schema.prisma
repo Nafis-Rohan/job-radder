@@ -29,6 +29,12 @@ enum Level {
   UNKNOWN
 }
 
+enum RemoteEligibility {
+  ELIGIBLE
+  NOT_ELIGIBLE
+  UNKNOWN
+}
+
 model User {
   id             String    @id @default(cuid())
   username       String    @unique
@@ -69,4 +75,30 @@ model Cv {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+// Jobs are shared by all users. One row per real job (hash = company + title + location).
+model Job {
+  id             String             @id @default(cuid())
+  source         String
+  url            String             @unique
+  hash           String             @unique
+  title          String
+  company        String
+  location       String?
+  description    String?
+  deadline       DateTime?
+  experienceText String?
+  skills         String[]
+  level          Level              @default(UNKNOWN)
+  domains        String[]
+  postedAt       DateTime?
+  foundAt        DateTime           @default(now())
+  isRemote       Boolean            @default(false)
+  remoteScope    String?
+  eligibility    RemoteEligibility?
+
+  @@index([foundAt])
+  @@index([company])
+  @@index([isRemote, eligibility])
 }
