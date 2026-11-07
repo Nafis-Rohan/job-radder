@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Job" ADD COLUMN     "maxYears" DOUBLE PRECISION,
+ADD COLUMN     "minYears" DOUBLE PRECISION;
