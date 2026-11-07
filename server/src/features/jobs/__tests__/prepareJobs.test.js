@@ -81,6 +81,33 @@ test("the site's own skill tags count as skills", () => {
   assert.ok(rows[0].skills.includes('docker'));
 });
 
+test('non-tech jobs are skipped and counted', () => {
+  const { rows, skipped } = prepareJobs([
+    { ...job, title: 'HR Executive', description: 'Hire people.', url: 'https://example.com/jobs/hr' },
+    { ...job, title: 'Accounts Officer', description: 'Books.', url: 'https://example.com/jobs/acc' },
+    job,
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(skipped, 2);
+});
+
+test('years asked for are saved as minYears and maxYears', () => {
+  const [range] = prepareJobs([{ ...job, description: 'We need 1-3 years with Node.js and Docker.' }]).rows;
+  assert.equal(range.minYears, 1);
+  assert.equal(range.maxYears, 3);
+  const [open] = prepareJobs([{ ...job, description: '5+ years with Node.js and Docker.' }]).rows;
+  assert.equal(open.minYears, 5);
+  assert.equal(open.maxYears, null);
+});
+
+test('only 6000 characters of the description are stored, but all of it is read', () => {
+  const description = `${'x '.repeat(4000)}We need 4 years of Node.js and Docker.`;
+  const [row] = prepareJobs([{ ...job, title: 'Backend Engineer', description }]).rows;
+  assert.equal(row.description.length, 6000);
+  assert.equal(row.minYears, 4);
+  assert.ok(row.skills.includes('node.js'));
+});
+
 test('remote jobs start as UNKNOWN eligibility, other jobs have none', () => {
   const { rows } = prepareJobs([job, { ...job, url: 'https://example.com/jobs/3', title: 'Office job', isRemote: false }]);
   assert.equal(rows[0].eligibility, 'UNKNOWN');

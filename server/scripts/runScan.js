@@ -6,7 +6,7 @@ import { saveJobs } from '../src/features/jobs/jobs.service.js';
 import { prisma } from '../src/shared/db/prisma.js';
 
 async function main() {
-  const totals = { found: 0, inserted: 0, duplicates: 0, invalid: 0, failedSources: 0 };
+  const totals = { found: 0, inserted: 0, duplicates: 0, invalid: 0, skipped: 0, failedSources: 0 };
 
   for (const collector of getCollectors()) {
     console.log(`\n[${collector.name}] collecting...`);
@@ -15,12 +15,13 @@ async function main() {
       const result = await saveJobs(jobs);
       console.log(
         `[${collector.name}] found ${jobs.length}: ${result.inserted} new, ` +
-          `${result.duplicates} already saved, ${result.invalid} invalid`,
+          `${result.duplicates} already saved, ${result.skipped} not tech (skipped), ${result.invalid} invalid`,
       );
       totals.found += jobs.length;
       totals.inserted += result.inserted;
       totals.duplicates += result.duplicates;
       totals.invalid += result.invalid;
+      totals.skipped += result.skipped;
     } catch (err) {
       // one broken source must never stop the others
       totals.failedSources += 1;

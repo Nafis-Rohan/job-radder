@@ -1,10 +1,13 @@
 import { jobHash } from './jobHash.js';
 import { extractSkills } from '../matching/extractSkills.js';
-import { extractExperience } from '../matching/extractExperience.js';
+import { extractExperience, extractExperienceRange } from '../matching/extractExperience.js';
+import { isTechJob } from './isTechJob.js';
 import { detectLevel } from '../matching/detectLevel.js';
 import { detectDomain } from '../matching/detectDomain.js';
 
-const LIMITS = { title: 300, company: 200, location: 200, description: 20_000, remoteScope: 200 };
+const LIMITS = { title: 300, company: 200, location: 200, description: 6000, remoteScope: 200 };
+// The text is read in full (up to this size) for skills and years; only 6000 characters are stored.
+const READ_LIMIT = 20_000;
 
 const clean = (value, max) => {
   const text = String(value ?? '').trim();
@@ -28,6 +31,7 @@ export function prepareJobs(jobs) {
   const seenUrls = new Set();
   let invalid = 0;
   let repeated = 0;
+  let skipped = 0; // not a tech job
 
   for (const job of jobs) {
     const title = clean(job?.title, LIMITS.title);
@@ -48,10 +52,18 @@ export function prepareJobs(jobs) {
     seenHashes.add(hash);
     seenUrls.add(url);
 
-    const description = clean(job.description, LIMITS.description);
-    const text = `${title}\n${description ?? ''}`;
+    const fullDescription = clean(job.description, READ_LIMIT);
+    const text = `${title}\n${fullDescription ?? ''}`;
     const years = extractExperience(text);
+    const { min: minYears, max: maxYears } = extractExperienceRange(text);
     const skillText = `${text}\n${clean(job.skillTags, 500) ?? ''}`; // + the site's own tags
+    const skills = extractSkills(skillText);
+
+    // only tech jobs are kept (saves database space too)
+    if (!isTechJob({ title, skills })) {
+      skipped += 1;
+      continue;
+    }
 
     rows.push({
       source: job.source,
@@ -60,10 +72,12 @@ export function prepareJobs(jobs) {
       title,
       company,
       location,
-      description,
+      description: fullDescription?.slice(0, LIMITS.description) ?? null,
       deadline: validDate(job.deadline),
       experienceText: clean(job.experienceText, 200),
-      skills: extractSkills(skillText),
+      minYears,
+      maxYears,
+      skills,
       level: detectLevel(title, years),
       domains: detectDomain(text),
       postedAt: validDate(job.postedAt),
@@ -74,5 +88,5 @@ export function prepareJobs(jobs) {
     });
   }
 
-  return { rows, invalid, repeated };
+  return { rows, invalid, repeated, skipped };
 }

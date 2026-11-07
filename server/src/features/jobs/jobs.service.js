@@ -3,11 +3,11 @@ import { prepareJobs } from './prepareJobs.js';
 
 // Saves the jobs a collector found. A job already in the database (same hash or same url)
 // is skipped, so running a scan twice saves each job once.
-// Returns { received, inserted, duplicates, invalid }.
+// Returns { received, inserted, duplicates, invalid, skipped } (skipped = not a tech job).
 export async function saveJobs(jobs) {
-  const { rows, invalid, repeated } = prepareJobs(jobs);
+  const { rows, invalid, repeated, skipped } = prepareJobs(jobs);
   if (rows.length === 0) {
-    return { received: jobs.length, inserted: 0, duplicates: repeated, invalid };
+    return { received: jobs.length, inserted: 0, duplicates: repeated, invalid, skipped };
   }
 
   const existing = await prisma.job.findMany({
@@ -30,5 +30,6 @@ export async function saveJobs(jobs) {
     inserted: count,
     duplicates: repeated + (rows.length - count),
     invalid,
+    skipped,
   };
 }

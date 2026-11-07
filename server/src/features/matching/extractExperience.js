@@ -28,6 +28,31 @@ export function extractExperience(text) {
   return best;
 }
 
+const RANGE_YEARS_RE = new RegExp(
+  `(?<![\\d.])${NUMBER}\\s*(\\+)?\\s*(?:(?:-|–|—|to)\\s*${NUMBER}\\s*(\\+)?\\s*)?(?:years?|yrs?)\\b`,
+  'gi',
+);
+
+// Years a job asks for, as { min, max }:  "1-3 years" -> 1 and 3,  "3+ years" -> 3 and null
+// (no upper limit),  "3 years" -> 3 and 3,  nothing written -> both null.
+// Several mentions: the one with the biggest minimum wins (same rule as extractExperience).
+export function extractExperienceRange(text) {
+  const none = { min: null, max: null };
+  if (!text) return none;
+
+  let best = none;
+  for (const match of text.matchAll(RANGE_YEARS_RE)) {
+    const [, first, firstPlus, second, secondPlus] = match;
+    const min = toNumber(first);
+    let max;
+    if (second !== undefined) max = secondPlus ? null : Math.max(min, toNumber(second));
+    else max = firstPlus ? null : min;
+
+    if (best.min === null || min > best.min) best = { min, max };
+  }
+  return best;
+}
+
 // ---- CV only: estimate the total experience from date ranges ("Jan 2020 - Present") ----
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];

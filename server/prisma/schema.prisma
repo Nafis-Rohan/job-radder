@@ -89,6 +89,8 @@ model Job {
   description    String?
   deadline       DateTime?
   experienceText String?
+  minYears       Float?
+  maxYears       Float?
   skills         String[]
   level          Level              @default(UNKNOWN)
   domains        String[]
