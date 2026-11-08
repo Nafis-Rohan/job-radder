@@ -4,8 +4,8 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
   moduleFormat        = "esm"
   importFileExtension = "ts"
 }
@@ -33,6 +33,14 @@ enum RemoteEligibility {
   ELIGIBLE
   NOT_ELIGIBLE
   UNKNOWN
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
 }
 
 model User {
@@ -103,4 +111,18 @@ model Job {
   @@index([foundAt])
   @@index([company])
   @@index([isRemote, eligibility])
+}
+
+// One row per scan. A RUNNING row younger than 30 minutes is the lock that stops two scans at once.
+model ScanRun {
+  id         String    @id @default(cuid())
+  trigger    String // "cron" | "manual" | "local"
+  status     RunStatus
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  perSource  Json? // { "weworkremotely": { found, inserted, duplicates, invalid, skipped, error? } }
+  newJobs    Int       @default(0)
+  alertsSent Int       @default(0)
+
+  @@index([startedAt])
 }
