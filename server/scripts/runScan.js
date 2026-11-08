@@ -1,38 +1,25 @@
-// Manual scan: runs every enabled collector once and saves the jobs.
+// Manual scan: runs every enabled collector once and saves the jobs (and a ScanRun row).
 // Run from the server folder:  node scripts/runScan.js
-// Phase 6 replaces this with the real scan runner (locks, ScanRun history, scheduler).
-import { getCollectors } from '../src/features/collectors/index.js';
-import { saveJobs } from '../src/features/jobs/jobs.service.js';
+import { runScan } from '../src/features/scans/scan.service.js';
 import { prisma } from '../src/shared/db/prisma.js';
 
 async function main() {
-  const totals = { found: 0, inserted: 0, duplicates: 0, invalid: 0, skipped: 0, failedSources: 0 };
+  const result = await runScan('local');
 
-  for (const collector of getCollectors()) {
-    console.log(`\n[${collector.name}] collecting...`);
-    try {
-      const jobs = await collector.collect({ keywords: [] });
-      const result = await saveJobs(jobs);
+  for (const [name, r] of Object.entries(result.perSource)) {
+    if (r.error) {
+      console.error(`[${name}] FAILED: ${r.error}`);
+    } else {
       console.log(
-        `[${collector.name}] found ${jobs.length}: ${result.inserted} new, ` +
-          `${result.duplicates} already saved, ${result.skipped} not tech (skipped), ${result.invalid} invalid`,
+        `[${name}] found ${r.found}: ${r.inserted} new, ${r.duplicates} already saved, ` +
+          `${r.skipped} not tech (skipped), ${r.invalid} invalid`,
       );
-      totals.found += jobs.length;
-      totals.inserted += result.inserted;
-      totals.duplicates += result.duplicates;
-      totals.invalid += result.invalid;
-      totals.skipped += result.skipped;
-    } catch (err) {
-      // one broken source must never stop the others
-      totals.failedSources += 1;
-      console.error(`[${collector.name}] FAILED: ${err.message}`);
     }
   }
-
-  console.log('\nDone.', totals);
+  console.log(`\nScan ${result.runId}: ${result.status}, ${result.newJobs} new jobs.`);
   console.log('Jobs in the database now:', await prisma.job.count());
-  // an automated caller must see that a source failed
-  if (totals.failedSources > 0) process.exitCode = 1;
+  // an automated caller must see that something went wrong (SKIPPED is not an error)
+  if (result.status === 'FAILED' || result.status === 'PARTIAL') process.exitCode = 1;
 }
 
 main()
