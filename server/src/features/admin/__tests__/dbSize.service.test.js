@@ -31,8 +31,15 @@ test('the limit is 0.5 GB', () => {
 
 test('getDbSize reads the real database', async () => {
   const result = await getDbSize();
-  assert.ok(result.totalBytes > 0);
-  assert.ok(result.percentUsed >= 0);
+
+  // the total must match an independent size query (other tests write at the same time, so allow 5 MB)
+  const [{ bytes }] = await prisma.$queryRaw`SELECT pg_database_size(current_database())::float8 AS bytes`;
+  assert.ok(Math.abs(result.totalBytes - bytes) < 5 * MB, `total ${result.totalBytes} vs ${bytes}`);
+
+  // the percent and MB values must follow from the total and the limit
+  assert.equal(result.percentUsed, Math.round((result.totalBytes / DB_LIMIT_BYTES) * 1000) / 10);
+  assert.equal(result.limitMb, 512);
+  assert.equal(result.totalMb, Math.round((result.totalBytes / MB) * 100) / 100);
 
   const names = result.tables.map((t) => t.table);
   for (const name of ['Job', 'User', 'ScanRun', 'LoginEvent', 'Cv']) {

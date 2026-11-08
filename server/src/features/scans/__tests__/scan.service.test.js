@@ -1,7 +1,7 @@
 import { test, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { prisma } from '../../../shared/db/prisma.js';
-import { runScan, LOCK_MINUTES } from '../scan.service.js';
+import { runScan, startScan, LOCK_MINUTES, MAX_SCAN_MINUTES } from '../scan.service.js';
 
 // These tests use the local database. Every row they create has a trigger starting with "test-".
 const clean = () => prisma.scanRun.deleteMany({ where: { trigger: { startsWith: 'test-' } } });
@@ -18,9 +18,12 @@ const fakeSave = async (jobs) => ({ received: jobs.length, inserted: 2, duplicat
 const noClean = async () => {}; // the real cleanup is tested in cleanup.service.test.js
 
 beforeEach(async () => {
-  // a real RUNNING scan in the local database must not break these tests
   await clean();
-  await prisma.scanRun.deleteMany({ where: { status: 'RUNNING' } });
+  // Only a STUCK scan (RUNNING for over 2 minutes, e.g. the server was killed) is removed, because it
+  // would block these tests. A scan that is running right now (they last about 15 seconds) is left alone.
+  await prisma.scanRun.deleteMany({
+    where: { status: 'RUNNING', startedAt: { lt: new Date(Date.now() - 2 * 60 * 1000) } },
+  });
 });
 after(async () => {
   await clean();
@@ -118,4 +121,40 @@ test('a cleanup that crashes does not change the scan result', async () => {
   assert.equal(result.status, 'SUCCESS');
   const row = await prisma.scanRun.findUnique({ where: { id: result.runId } });
   assert.equal(row.status, 'SUCCESS');
+});
+
+test('startScan answers at once with the run id, the scan finishes later', async () => {
+  const slow = { name: 'slow', enabled: true, collect: async () => (await new Promise((r) => setTimeout(r, 150)), []) };
+  const started = await startScan('test-j', { collectors: [slow], save: fakeSave, clean: noClean });
+  assert.equal(started.status, 'started');
+
+  const running = await prisma.scanRun.findUnique({ where: { id: started.runId } });
+  assert.equal(running.status, 'RUNNING');
+
+  const result = await started.done;
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.runId, started.runId);
+});
+
+test('startScan says "skipped" when another scan is running', async () => {
+  await prisma.scanRun.create({ data: { trigger: 'test-k', status: 'RUNNING' } });
+  const started = await startScan('test-k2', { collectors: [okSource('a')], save: fakeSave, clean: noClean });
+  assert.equal(started.status, 'skipped');
+  const row = await prisma.scanRun.findUnique({ where: { id: started.runId } });
+  assert.equal(row.status, 'SKIPPED');
+  assert.ok(row.finishedAt >= row.startedAt);
+});
+
+test('a scan that runs too long stops starting new sources and ends as PARTIAL', async () => {
+  assert.equal(MAX_SCAN_MINUTES < LOCK_MINUTES, true);
+  const slow = { name: 'slow', enabled: true, collect: async () => (await new Promise((r) => setTimeout(r, 120)), [{}]) };
+  let secondRan = false;
+  const second = { name: 'second', enabled: true, collect: async () => ((secondRan = true), [{}]) };
+
+  // maxMinutes 0.001 = 60 ms: the first source passes the check, the second one is too late
+  const result = await runScan('test-l', { collectors: [slow, second], save: fakeSave, clean: noClean, maxMinutes: 0.001 });
+  assert.equal(result.status, 'PARTIAL');
+  assert.equal(secondRan, false);
+  assert.match(result.perSource.second.error, /too long/);
+  assert.equal(result.perSource.slow.found, 1);
 });

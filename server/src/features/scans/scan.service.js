@@ -6,26 +6,31 @@ import { cleanup } from './cleanup.service.js';
 
 // A scan that says RUNNING for longer than this is treated as dead (the server crashed or restarted).
 export const LOCK_MINUTES = 30;
+// A live scan stops starting new sources after this long, so it always ends before its lock runs out.
+export const MAX_SCAN_MINUTES = LOCK_MINUTES - 5;
 
 // Takes the lock and creates the ScanRun row in one transaction.
 // The advisory lock makes two scans that start together wait for each other, so only one gets in.
 async function startRun(trigger) {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('scan'))`;
-    const since = new Date(Date.now() - LOCK_MINUTES * 60 * 1000);
+    const now = new Date();
+    const since = new Date(now.getTime() - LOCK_MINUTES * 60 * 1000);
 
     const busy = await tx.scanRun.findFirst({ where: { status: 'RUNNING', startedAt: { gt: since } } });
     if (busy) {
-      const run = await tx.scanRun.create({ data: { trigger, status: 'SKIPPED', finishedAt: new Date() } });
+      const run = await tx.scanRun.create({
+        data: { trigger, status: 'SKIPPED', startedAt: now, finishedAt: now },
+      });
       return { run, skipped: true };
     }
 
     // old RUNNING rows are dead scans: close them so the history is honest
     await tx.scanRun.updateMany({
       where: { status: 'RUNNING', startedAt: { lte: since } },
-      data: { status: 'FAILED', finishedAt: new Date() },
+      data: { status: 'FAILED', finishedAt: now },
     });
-    const run = await tx.scanRun.create({ data: { trigger, status: 'RUNNING' } });
+    const run = await tx.scanRun.create({ data: { trigger, status: 'RUNNING', startedAt: now } });
     return { run, skipped: false };
   });
 }
@@ -40,24 +45,21 @@ function finalStatus(failed, total) {
   return failed === total ? 'FAILED' : 'PARTIAL';
 }
 
-// Runs every enabled collector once and saves the jobs. trigger = "cron" | "manual" | "local".
-// One broken source never stops the others. `collectors` and `save` can be replaced in tests.
-export async function runScan(
-  trigger,
-  { collectors = getCollectors(), save = saveJobs, clean = cleanup } = {},
-) {
-  const { run, skipped } = await startRun(trigger);
-  if (skipped) {
-    logger.info({ runId: run.id, trigger }, 'Scan skipped: another scan is running');
-    return { runId: run.id, status: 'SKIPPED', newJobs: 0, perSource: {} };
-  }
-
+// The work of a scan whose lock is already taken (`run` is its RUNNING row).
+async function executeScan(run, trigger, { collectors, save, clean, maxMinutes }) {
   try {
     const perSource = {};
     let newJobs = 0;
     let failed = 0;
+    const deadline = Date.now() + maxMinutes * 60 * 1000;
 
     for (const collector of collectors) {
+      if (Date.now() > deadline) {
+        failed += 1;
+        perSource[collector.name] = { error: 'Not started: the scan took too long' };
+        logger.warn({ source: collector.name }, 'Scan deadline reached, source skipped');
+        continue;
+      }
       try {
         const jobs = await collector.collect({ keywords: [] });
         const result = await save(jobs);
@@ -97,4 +99,35 @@ export async function runScan(
       .catch(() => {});
     throw err;
   }
+}
+
+const defaults = () => ({
+  collectors: getCollectors(),
+  save: saveJobs,
+  clean: cleanup,
+  maxMinutes: MAX_SCAN_MINUTES,
+});
+
+// Takes the lock at once, then runs the scan in the background.
+// Returns { runId, status: 'started' | 'skipped', done } right away; `done` finishes with the scan.
+// Used by the endpoints, so the caller knows whether a scan really started.
+export async function startScan(trigger, options = {}) {
+  const { run, skipped } = await startRun(trigger);
+  if (skipped) {
+    logger.info({ runId: run.id, trigger }, 'Scan skipped: another scan is running');
+    return { runId: run.id, status: 'skipped', done: Promise.resolve() };
+  }
+  const done = executeScan(run, trigger, { ...defaults(), ...options });
+  return { runId: run.id, status: 'started', done };
+}
+
+// Runs every enabled collector once and saves the jobs, and waits for the end.
+// trigger = "cron" | "manual" | "local". One broken source never stops the others.
+// `collectors`, `save`, `clean` and `maxMinutes` can be replaced in tests.
+export async function runScan(trigger, options = {}) {
+  const started = await startScan(trigger, options);
+  if (started.status === 'skipped') {
+    return { runId: started.runId, status: 'SKIPPED', newJobs: 0, perSource: {} };
+  }
+  return started.done;
 }

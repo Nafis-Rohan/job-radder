@@ -15,6 +15,15 @@ const loginAs = (role) => [
   requireRole('ADMIN'),
 ];
 
+// A fake startScan: calls onStart(trigger) and answers like the real one.
+const fakeStart =
+  (onStart = () => {}, { status = 'started', done = Promise.resolve() } = {}) =>
+  async (trigger) => {
+    onStart(trigger);
+    // `done` can be a function, so a rejecting promise is only created when the request arrives
+    return { runId: 'run-1', status, done: typeof done === 'function' ? done() : done };
+  };
+
 async function withServer(router, fn) {
   const server = express().use(express.json()).use('/api/admin', router).listen(0);
   const base = `http://localhost:${server.address().port}/api/admin`;
@@ -25,7 +34,7 @@ async function withServer(router, fn) {
   }
 }
 
-test('not logged in: 401 on both routes (real app)', async () => {
+test('not logged in: 401 on every route (real app)', async () => {
   const server = app.listen(0);
   const base = `http://localhost:${server.address().port}/api/admin`;
   try {
@@ -40,7 +49,10 @@ test('not logged in: 401 on both routes (real app)', async () => {
 test('USER and DEMO get 403 and no scan starts', async () => {
   for (const role of ['USER', 'DEMO']) {
     let started = false;
-    const controller = buildAdminController({ run: async () => (started = true), list: async () => [] });
+    const controller = buildAdminController({
+      start: fakeStart(() => (started = true)),
+      list: async () => [],
+    });
     await withServer(buildAdminRouter({ guard: loginAs(role), controller }), async (base) => {
       assert.equal((await fetch(`${base}/scan`, { method: 'POST' })).status, 403, role);
       assert.equal((await fetch(`${base}/scan-runs`)).status, 403, role);
@@ -50,22 +62,41 @@ test('USER and DEMO get 403 and no scan starts', async () => {
   }
 });
 
-test('admin: POST /scan returns 202 and starts a "manual" scan', async () => {
+test('admin: POST /scan returns 202 with the run id and starts a "manual" scan', async () => {
   const calls = [];
-  const controller = buildAdminController({ run: async (t) => calls.push(t), list: async () => [] });
+  const controller = buildAdminController({ start: fakeStart((t) => calls.push(t)), list: async () => [] });
   await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {
     const res = await fetch(`${base}/scan`, { method: 'POST' });
     assert.equal(res.status, 202);
-    assert.deepEqual(await res.json(), { status: 'started' });
+    assert.deepEqual(await res.json(), { status: 'started', runId: 'run-1' });
   });
   assert.deepEqual(calls, ['manual']);
+});
+
+test('admin: another scan is running, so the answer says "skipped"', async () => {
+  const controller = buildAdminController({ start: fakeStart(() => {}, { status: 'skipped' }) });
+  await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {
+    const res = await fetch(`${base}/scan`, { method: 'POST' });
+    assert.equal(res.status, 202);
+    assert.deepEqual(await res.json(), { status: 'skipped', runId: 'run-1' });
+  });
+});
+
+test('admin: 202 comes back before the scan is finished', async () => {
+  let finished = false;
+  const done = new Promise((resolve) => setTimeout(resolve, 300)).then(() => (finished = true));
+  const controller = buildAdminController({ start: fakeStart(() => {}, { done }) });
+  await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {
+    assert.equal((await fetch(`${base}/scan`, { method: 'POST' })).status, 202);
+    assert.equal(finished, false);
+  });
 });
 
 test('admin: GET /scan-runs returns the history, limit defaults to 20 and is checked', async () => {
   const limits = [];
   const rows = [{ id: 'r1', trigger: 'cron', status: 'SUCCESS' }];
   const controller = buildAdminController({
-    run: async () => {},
+    start: fakeStart(),
     list: async (limit) => (limits.push(limit), rows),
   });
   await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {
@@ -83,7 +114,7 @@ test('admin: GET /scan-runs returns the history, limit defaults to 20 and is che
 
 test('a scan that crashes does not break the 202', async () => {
   const controller = buildAdminController({
-    run: async () => Promise.reject(new Error('boom')),
+    start: fakeStart(() => {}, { done: () => Promise.reject(new Error('boom')) }),
     list: async () => [],
   });
   await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {

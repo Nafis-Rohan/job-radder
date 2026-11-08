@@ -6,6 +6,15 @@ import { secretMatches } from '../../../shared/middleware/cronAuth.js';
 
 const SECRET = 'a'.repeat(40);
 
+// A fake startScan: remembers the trigger and answers like the real one.
+const fakeStart = (calls = [], { status = 'started', done = Promise.resolve() } = {}) => {
+  return async (trigger) => {
+    calls.push(trigger);
+    // `done` can be a function, so a rejecting promise is only created when the request arrives
+    return { runId: 'run-1', status, done: typeof done === 'function' ? done() : done };
+  };
+};
+
 // a small app with the internal router and a fake scan, so no database or network is needed
 async function withServer(options, fn) {
   const app = express();
@@ -31,23 +40,28 @@ test('secretMatches: only the exact secret passes', () => {
   assert.equal(secretMatches('', ''), false);
 });
 
-test('right secret: 202 and the scan starts with trigger "cron"', async () => {
+test('right secret: 202, the run id, and the scan starts with trigger "cron"', async () => {
   const calls = [];
-  await withServer({ secret: SECRET, run: async (trigger) => calls.push(trigger) }, async (base) => {
+  await withServer({ secret: SECRET, start: fakeStart(calls) }, async (base) => {
     const res = await post(base, { 'X-Cron-Secret': SECRET });
     assert.equal(res.status, 202);
-    assert.deepEqual(await res.json(), { status: 'started' });
+    assert.deepEqual(await res.json(), { status: 'started', runId: 'run-1' });
   });
   assert.deepEqual(calls, ['cron']);
 });
 
+test('another scan is running: still 202, but the status says "skipped"', async () => {
+  await withServer({ secret: SECRET, start: fakeStart([], { status: 'skipped' }) }, async (base) => {
+    const res = await post(base, { 'X-Cron-Secret': SECRET });
+    assert.equal(res.status, 202);
+    assert.deepEqual(await res.json(), { status: 'skipped', runId: 'run-1' });
+  });
+});
+
 test('202 comes back before the scan is finished', async () => {
   let finished = false;
-  const slowScan = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    finished = true;
-  };
-  await withServer({ secret: SECRET, run: slowScan }, async (base) => {
+  const done = new Promise((resolve) => setTimeout(resolve, 300)).then(() => (finished = true));
+  await withServer({ secret: SECRET, start: fakeStart([], { done }) }, async (base) => {
     const res = await post(base, { 'X-Cron-Secret': SECRET });
     assert.equal(res.status, 202);
     assert.equal(finished, false);
@@ -55,28 +69,37 @@ test('202 comes back before the scan is finished', async () => {
 });
 
 test('wrong or missing secret: 401 and no scan', async () => {
-  let started = false;
-  await withServer({ secret: SECRET, run: async () => (started = true) }, async (base) => {
+  const calls = [];
+  await withServer({ secret: SECRET, start: fakeStart(calls) }, async (base) => {
     assert.equal((await post(base, { 'X-Cron-Secret': 'b'.repeat(40) })).status, 401);
     assert.equal((await post(base)).status, 401);
     assert.equal((await post(base, { 'X-Cron-Secret': '' })).status, 401);
   });
-  assert.equal(started, false);
+  assert.deepEqual(calls, []);
 });
 
 test('no secret configured: even a header is rejected', async () => {
-  let started = false;
-  await withServer({ secret: undefined, run: async () => (started = true) }, async (base) => {
+  const calls = [];
+  await withServer({ secret: undefined, start: fakeStart(calls) }, async (base) => {
     assert.equal((await post(base, { 'X-Cron-Secret': SECRET })).status, 401);
   });
-  assert.equal(started, false);
+  assert.deepEqual(calls, []);
 });
 
-test('a scan that crashes does not break the 202 or the server', async () => {
-  await withServer(
-    { secret: SECRET, run: async () => Promise.reject(new Error('boom')) },
-    async (base) => {
-      assert.equal((await post(base, { 'X-Cron-Secret': SECRET })).status, 202);
-    },
-  );
+test('a scan that crashes does not break the 202', async () => {
+  const done = () => Promise.reject(new Error('boom'));
+  await withServer({ secret: SECRET, start: fakeStart([], { done }) }, async (base) => {
+    assert.equal((await post(base, { 'X-Cron-Secret': SECRET })).status, 202);
+  });
+});
+
+test('calls with the right secret are limited too, and wrong guesses do not use up the limit', async () => {
+  const calls = [];
+  await withServer({ secret: SECRET, start: fakeStart(calls), callLimit: 3 }, async (base) => {
+    for (let i = 0; i < 5; i += 1) await post(base, { 'X-Cron-Secret': 'wrong' }); // 5 wrong guesses
+    const statuses = [];
+    for (let i = 0; i < 5; i += 1) statuses.push((await post(base, { 'X-Cron-Secret': SECRET })).status);
+    assert.deepEqual(statuses, [202, 202, 202, 429, 429]);
+  });
+  assert.equal(calls.length, 3);
 });

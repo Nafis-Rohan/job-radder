@@ -1,16 +1,18 @@
 import { logger } from '../../shared/utils/logger.js';
-import { runScan, listScanRuns } from '../scans/scan.service.js';
+import { startScan, listScanRuns } from '../scans/scan.service.js';
 import { getDbSize } from './dbSize.service.js';
 
 // Makes the service functions replaceable in tests.
-export function buildAdminController({ run = runScan, list = listScanRuns, dbSize = getDbSize } = {}) {
+export function buildAdminController({ start = startScan, list = listScanRuns, dbSize = getDbSize } = {}) {
   return {
-    // 202 at once, the scan runs in the background. Watch it in GET /scan-runs.
-    startScan(req, res) {
-      run('manual').catch((err) => {
+    // 202 at once, the scan runs in the background.
+    // status is "started", or "skipped" when another scan is running. runId finds the row in GET /scan-runs.
+    async startScan(req, res) {
+      const { runId, status, done } = await start('manual');
+      done.catch((err) => {
         logger.error({ errMessage: err.message }, 'Manual scan crashed');
       });
-      res.status(202).json({ status: 'started' });
+      res.status(202).json({ status, runId });
     },
 
     async scanRuns(req, res) {
