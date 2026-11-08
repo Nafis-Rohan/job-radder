@@ -2,6 +2,7 @@ import { prisma } from '../../shared/db/prisma.js';
 import { logger } from '../../shared/utils/logger.js';
 import { getCollectors } from '../collectors/index.js';
 import { saveJobs } from '../jobs/jobs.service.js';
+import { cleanup } from './cleanup.service.js';
 
 // A scan that says RUNNING for longer than this is treated as dead (the server crashed or restarted).
 export const LOCK_MINUTES = 30;
@@ -41,7 +42,10 @@ function finalStatus(failed, total) {
 
 // Runs every enabled collector once and saves the jobs. trigger = "cron" | "manual" | "local".
 // One broken source never stops the others. `collectors` and `save` can be replaced in tests.
-export async function runScan(trigger, { collectors = getCollectors(), save = saveJobs } = {}) {
+export async function runScan(
+  trigger,
+  { collectors = getCollectors(), save = saveJobs, clean = cleanup } = {},
+) {
   const { run, skipped } = await startRun(trigger);
   if (skipped) {
     logger.info({ runId: run.id, trigger }, 'Scan skipped: another scan is running');
@@ -78,6 +82,13 @@ export async function runScan(trigger, { collectors = getCollectors(), save = sa
       data: { status, finishedAt: new Date(), perSource, newJobs },
     });
     logger.info({ runId: run.id, trigger, status, newJobs }, 'Scan finished');
+
+    // old data is removed after the scan; a cleanup problem must not turn a good scan into a failure
+    try {
+      await clean();
+    } catch (err) {
+      logger.error({ errMessage: err.message }, 'Cleanup failed');
+    }
     return { runId: run.id, status, newJobs, perSource };
   } catch (err) {
     // never leave a RUNNING row behind: it would block the next scans for 30 minutes

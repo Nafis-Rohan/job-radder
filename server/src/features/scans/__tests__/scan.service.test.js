@@ -15,6 +15,7 @@ const brokenSource = (name) => ({
   },
 });
 const fakeSave = async (jobs) => ({ received: jobs.length, inserted: 2, duplicates: 1, invalid: 0, skipped: 0 });
+const noClean = async () => {}; // the real cleanup is tested in cleanup.service.test.js
 
 beforeEach(async () => {
   // a real RUNNING scan in the local database must not break these tests
@@ -27,7 +28,7 @@ after(async () => {
 });
 
 test('a good scan is saved as SUCCESS with counts per source', async () => {
-  const result = await runScan('test-a', { collectors: [okSource('a'), okSource('b')], save: fakeSave });
+  const result = await runScan('test-a', { collectors: [okSource('a'), okSource('b')], save: fakeSave, clean: noClean });
   assert.equal(result.status, 'SUCCESS');
   assert.equal(result.newJobs, 4);
 
@@ -41,7 +42,7 @@ test('a good scan is saved as SUCCESS with counts per source', async () => {
 });
 
 test('one broken source gives PARTIAL and the other source still runs', async () => {
-  const result = await runScan('test-b', { collectors: [brokenSource('bad'), okSource('good')], save: fakeSave });
+  const result = await runScan('test-b', { collectors: [brokenSource('bad'), okSource('good')], save: fakeSave, clean: noClean });
   assert.equal(result.status, 'PARTIAL');
   assert.equal(result.newJobs, 2);
   assert.equal(result.perSource.bad.error, 'site is down');
@@ -49,7 +50,7 @@ test('one broken source gives PARTIAL and the other source still runs', async ()
 });
 
 test('every source broken gives FAILED', async () => {
-  const result = await runScan('test-c', { collectors: [brokenSource('x'), brokenSource('y')], save: fakeSave });
+  const result = await runScan('test-c', { collectors: [brokenSource('x'), brokenSource('y')], save: fakeSave, clean: noClean });
   assert.equal(result.status, 'FAILED');
   assert.equal(result.newJobs, 0);
 });
@@ -59,7 +60,7 @@ test('a scan is SKIPPED while another one is running', async () => {
   let collected = false;
   const spy = { name: 'spy', enabled: true, collect: async () => ((collected = true), []) };
 
-  const result = await runScan('test-d2', { collectors: [spy], save: fakeSave });
+  const result = await runScan('test-d2', { collectors: [spy], save: fakeSave, clean: noClean });
   assert.equal(result.status, 'SKIPPED');
   assert.equal(collected, false);
   const row = await prisma.scanRun.findUnique({ where: { id: result.runId } });
@@ -71,7 +72,7 @@ test(`a RUNNING scan older than ${LOCK_MINUTES} minutes is dead: it is closed an
     data: { trigger: 'test-e', status: 'RUNNING', startedAt: new Date(Date.now() - (LOCK_MINUTES + 5) * 60 * 1000) },
   });
 
-  const result = await runScan('test-e2', { collectors: [okSource('a')], save: fakeSave });
+  const result = await runScan('test-e2', { collectors: [okSource('a')], save: fakeSave, clean: noClean });
   assert.equal(result.status, 'SUCCESS');
   const closed = await prisma.scanRun.findUnique({ where: { id: old.id } });
   assert.equal(closed.status, 'FAILED');
@@ -81,8 +82,8 @@ test(`a RUNNING scan older than ${LOCK_MINUTES} minutes is dead: it is closed an
 test('two scans started together: only one runs', async () => {
   const slow = { name: 'slow', enabled: true, collect: async () => (await new Promise((r) => setTimeout(r, 200)), []) };
   const [one, two] = await Promise.all([
-    runScan('test-f1', { collectors: [slow], save: fakeSave }),
-    runScan('test-f2', { collectors: [slow], save: fakeSave }),
+    runScan('test-f1', { collectors: [slow], save: fakeSave, clean: noClean }),
+    runScan('test-f2', { collectors: [slow], save: fakeSave, clean: noClean }),
   ]);
   assert.deepEqual([one.status, two.status].sort(), ['SKIPPED', 'SUCCESS']);
 });
@@ -92,7 +93,29 @@ test('if saving crashes, the run is closed as FAILED and the error goes up', asy
     throw new Error('db exploded');
   };
   // a crash inside one source is caught per source, so break the run itself with a bad collector list
-  await assert.rejects(runScan('test-g', { collectors: null, save: crash }));
+  await assert.rejects(runScan('test-g', { collectors: null, save: crash, clean: noClean }));
   const row = await prisma.scanRun.findFirst({ where: { trigger: 'test-g' } });
   assert.equal(row.status, 'FAILED');
+});
+
+test('cleanup runs after a finished scan, but not when the scan is skipped', async () => {
+  let cleaned = 0;
+  const clean = async () => (cleaned += 1);
+
+  await runScan('test-h', { collectors: [okSource('a')], save: fakeSave, clean });
+  assert.equal(cleaned, 1);
+
+  await prisma.scanRun.create({ data: { trigger: 'test-h2', status: 'RUNNING' } });
+  await runScan('test-h3', { collectors: [okSource('a')], save: fakeSave, clean });
+  assert.equal(cleaned, 1);
+});
+
+test('a cleanup that crashes does not change the scan result', async () => {
+  const clean = async () => {
+    throw new Error('cleanup broke');
+  };
+  const result = await runScan('test-i', { collectors: [okSource('a')], save: fakeSave, clean });
+  assert.equal(result.status, 'SUCCESS');
+  const row = await prisma.scanRun.findUnique({ where: { id: result.runId } });
+  assert.equal(row.status, 'SUCCESS');
 });
