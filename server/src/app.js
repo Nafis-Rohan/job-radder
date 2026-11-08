@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import healthRoutes from './features/health/health.routes.js';
 import authRoutes from './features/auth/auth.routes.js';
 import cvRoutes from './features/cv/cv.routes.js';
+import internalRoutes from './features/scans/internal.routes.js';
 import { notFound, errorHandler } from './shared/middleware/errorHandler.js';
 
 const app = express();
@@ -15,6 +16,7 @@ app.use(cookieParser());
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/cvs', cvRoutes);
+app.use('/api/internal', internalRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
