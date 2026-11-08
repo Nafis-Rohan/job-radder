@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import healthRoutes from './features/health/health.routes.js';
 import authRoutes from './features/auth/auth.routes.js';
 import cvRoutes from './features/cv/cv.routes.js';
+import adminRoutes from './features/admin/admin.routes.js';
 import internalRoutes from './features/scans/internal.routes.js';
 import { notFound, errorHandler } from './shared/middleware/errorHandler.js';
 
@@ -17,6 +18,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/cvs', cvRoutes);
 app.use('/api/internal', internalRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -29,6 +29,11 @@ async function startRun(trigger) {
   });
 }
 
+// Newest scans first, for the admin history.
+export function listScanRuns(limit = 20) {
+  return prisma.scanRun.findMany({ orderBy: { startedAt: 'desc' }, take: limit });
+}
+
 function finalStatus(failed, total) {
   if (failed === 0) return 'SUCCESS';
   return failed === total ? 'FAILED' : 'PARTIAL';
