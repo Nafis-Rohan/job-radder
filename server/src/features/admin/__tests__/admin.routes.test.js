@@ -31,6 +31,7 @@ test('not logged in: 401 on both routes (real app)', async () => {
   try {
     assert.equal((await fetch(`${base}/scan-runs`)).status, 401);
     assert.equal((await fetch(`${base}/scan`, { method: 'POST' })).status, 401);
+    assert.equal((await fetch(`${base}/db-size`)).status, 401);
   } finally {
     server.close();
   }
@@ -43,6 +44,7 @@ test('USER and DEMO get 403 and no scan starts', async () => {
     await withServer(buildAdminRouter({ guard: loginAs(role), controller }), async (base) => {
       assert.equal((await fetch(`${base}/scan`, { method: 'POST' })).status, 403, role);
       assert.equal((await fetch(`${base}/scan-runs`)).status, 403, role);
+      assert.equal((await fetch(`${base}/db-size`)).status, 403, role);
     });
     assert.equal(started, false);
   }
@@ -86,5 +88,15 @@ test('a scan that crashes does not break the 202', async () => {
   });
   await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {
     assert.equal((await fetch(`${base}/scan`, { method: 'POST' })).status, 202);
+  });
+});
+
+test('admin: GET /db-size returns what the service gives', async () => {
+  const answer = { totalMb: 12.5, tables: [] };
+  const controller = buildAdminController({ dbSize: async () => answer });
+  await withServer(buildAdminRouter({ guard: loginAs('ADMIN'), controller }), async (base) => {
+    const res = await fetch(`${base}/db-size`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), answer);
   });
 });

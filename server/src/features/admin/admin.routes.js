@@ -16,6 +16,7 @@ export function buildAdminRouter({
 
   router.post('/scan', adminScanLimiter, controller.startScan);
   router.get('/scan-runs', validate(scanRunsQuerySchema, 'query'), controller.scanRuns);
+  router.get('/db-size', controller.dbSize);
 
   return router;
 }
