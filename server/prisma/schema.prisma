@@ -122,7 +122,7 @@ model Job {
   @@index([isRemote, eligibility])
 }
 
-// How well one job fits one CV. Saved only when total >= 20, so weak matches do not fill the free database.
+// How well one job fits one CV. Saved only when total >= 40, so weak matches do not fill the free database.
 // Deleting a job or a CV deletes its matches too (onDelete: Cascade).
 model Match {
   id        String     @id @default(cuid())

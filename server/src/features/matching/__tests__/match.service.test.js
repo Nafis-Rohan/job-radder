@@ -7,6 +7,7 @@ import {
   saveMatchRows,
   scoreNewJobs,
   rescoreCv,
+  rescoreCvInBackground,
   MIN_TOTAL,
   MAX_YEARS_GAP,
 } from '../match.service.js';
@@ -155,6 +156,46 @@ test('rescoreCv scores old jobs too, drops matches that no longer fit, keeps ale
   assert.equal(byJob[j2.id].total, 100); // alerted match updated...
   assert.equal(byJob[j2.id].notified, true); // ...and still marked as alerted
   assert.equal(Object.keys(byJob).length, 2);
+});
+
+test('rescoreCv updates an alerted match even when it no longer fits the CV', async () => {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const cvRow = await prisma.cv.create({
+    data: { userId: user.id, name: 'c', textEnc: 'x', yearsExp: 2, level: 'MID', skills: ['node.js'], keywords: [], domains: ['fintech'] },
+  });
+  // far too senior for this CV: a normal match would not be saved, but this one was alerted earlier
+  const job = await prisma.job.create({
+    data: jobRow(7, { skills: ['node.js'], minYears: 9, level: 'MID', domains: ['fintech'] }),
+  });
+  await prisma.match.create({
+    data: { cvId: cvRow.id, jobId: job.id, stackFit: 100, expFit: 100, levelFit: 100, domainFit: 100, total: 100, label: 'STRONG', gaps: [], notified: true },
+  });
+
+  await rescoreCv(cvRow.id);
+
+  const match = await prisma.match.findUnique({ where: { cvId_jobId: { cvId: cvRow.id, jobId: job.id } } });
+  assert.equal(match.notified, true); // still there, never alerted twice
+  assert.equal(match.expFit, 0); // 7 years short: the old 100 was replaced
+  assert.ok(match.total < 100);
+});
+
+test('rescoreCvInBackground runs one rescore at a time per CV and merges repeated requests', async () => {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const cvRow = await prisma.cv.create({
+    data: { userId: user.id, name: 'c', textEnc: 'x', yearsExp: 2, level: 'MID', skills: ['node.js'], keywords: [], domains: [] },
+  });
+  const job = await prisma.job.create({ data: jobRow(8, { skills: ['node.js'], minYears: 2, level: 'MID' }) });
+
+  const first = rescoreCvInBackground(cvRow.id);
+  const second = rescoreCvInBackground(cvRow.id);
+  const third = rescoreCvInBackground(cvRow.id);
+  assert.equal(first, second); // same running task, not three scans
+  assert.equal(first, third);
+  await first;
+
+  assert.equal(await prisma.match.count({ where: { cvId: cvRow.id, jobId: job.id } }), 1);
+  assert.notEqual(rescoreCvInBackground(cvRow.id), first); // finished: the next request starts a new run
+  await rescoreCvInBackground(cvRow.id);
 });
 
 test('rescoreCv does nothing for an inactive or missing CV', async () => {

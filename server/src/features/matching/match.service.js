@@ -80,8 +80,11 @@ async function matchCv(cv, where) {
 }
 
 // Same paging as matchCv, but only builds the rows (nothing is saved here).
-async function buildAllRowsForCv(cv) {
+// `rows` = the worthwhile matches. `alertedRows` = the new scores of jobs that were already alerted,
+// even when they are no longer worthwhile, so their stored score and gaps never stay outdated.
+async function buildAllRowsForCv(cv, alertedIds) {
   const rows = [];
+  const alertedRows = [];
   let scored = 0;
   let cursor;
   for (;;) {
@@ -92,40 +95,74 @@ async function buildAllRowsForCv(cv) {
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     });
     if (jobs.length === 0) break;
-    rows.push(...buildMatchRows(cv, jobs));
+    for (const job of jobs) {
+      if (alertedIds.has(job.id)) alertedRows.push({ cvId: cv.id, jobId: job.id, ...scoreMatch(cv, job) });
+    }
+    rows.push(...buildMatchRows(cv, jobs).filter((r) => !alertedIds.has(r.jobId)));
     scored += jobs.length;
     cursor = jobs[jobs.length - 1].id;
     if (jobs.length < PAGE_SIZE) break;
   }
-  return { rows, scored };
+  return { rows, alertedRows, scored };
 }
 
 // The CV changed (new upload, or skills / years / level / domains edited): score ALL jobs again.
 // Old matches that are no longer worthwhile are removed. Matches already sent as an alert
 // (notified = true) are kept and only get their new scores, so no alert is ever sent twice.
+// Delete + insert + updates are ONE transaction: if anything fails, the old matches stay as they were.
 export async function rescoreCv(cvId) {
   const cv = await prisma.cv.findUnique({ where: { id: cvId }, select: { ...CV_FIELDS, isActive: true } });
   if (!cv || !cv.isActive) return { scored: 0, saved: 0 };
 
-  const { rows, scored } = await buildAllRowsForCv(cv);
-  const alerted = await prisma.match.findMany({ where: { cvId, notified: true }, select: { jobId: true } });
-  const alertedIds = new Set(alerted.map((m) => m.jobId));
-  const fresh = rows.filter((r) => !alertedIds.has(r.jobId));
+  // A job can be deleted (old-jobs cleanup) while we work: the insert then fails with P2003.
+  // Scoring again is cheap and the second try sees the job gone.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const alerted = await prisma.match.findMany({ where: { cvId, notified: true }, select: { jobId: true } });
+      const { rows, alertedRows, scored } = await buildAllRowsForCv(cv, new Set(alerted.map((m) => m.jobId)));
 
-  await prisma.match.deleteMany({ where: { cvId, notified: false } });
-  const saved = await saveMatchRows(fresh);
-  for (const row of rows.filter((r) => alertedIds.has(r.jobId))) {
-    const { cvId: _c, jobId, ...scores } = row;
-    await prisma.match.updateMany({ where: { cvId, jobId }, data: scores });
+      const saved = await prisma.$transaction(async (tx) => {
+        await tx.match.deleteMany({ where: { cvId, notified: false } });
+        const { count } = await tx.match.createMany({ data: rows, skipDuplicates: true });
+        for (const { cvId: _c, jobId, ...scores } of alertedRows) {
+          await tx.match.updateMany({ where: { cvId, jobId }, data: scores });
+        }
+        return count;
+      });
+
+      logger.info({ scored, saved }, 'CV rescored');
+      return { scored, saved };
+    } catch (err) {
+      if (err.code !== 'P2003' || attempt >= 3) throw err;
+    }
   }
-
-  logger.info({ scored, saved }, 'CV rescored');
-  return { scored, saved };
 }
 
 // Called from the CV routes. The answer to the user does not wait for it; a failure is only logged.
+// One rescore per CV at a time: requests that arrive meanwhile are merged into ONE more run afterwards,
+// so repeated edits cannot start many full scans at once.
+const running = new Map(); // cvId -> { again, promise }
 export function rescoreCvInBackground(cvId) {
-  rescoreCv(cvId).catch((err) => logger.error({ err }, 'CV rescoring failed'));
+  const current = running.get(cvId);
+  if (current) {
+    current.again = true;
+    return current.promise;
+  }
+  const state = { again: false };
+  state.promise = (async () => {
+    try {
+      do {
+        state.again = false;
+        await rescoreCv(cvId);
+      } while (state.again);
+    } catch (err) {
+      logger.error({ err }, 'CV rescoring failed');
+    } finally {
+      running.delete(cvId);
+    }
+  })();
+  running.set(cvId, state);
+  return state.promise;
 }
 
 // After a scan: score the jobs found since `since` against every active CV.
