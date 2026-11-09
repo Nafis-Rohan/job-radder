@@ -35,6 +35,13 @@ enum RemoteEligibility {
   UNKNOWN
 }
 
+enum MatchLabel {
+  STRONG
+  GOOD
+  PARTIAL
+  WEAK
+}
+
 enum RunStatus {
   RUNNING
   SUCCESS
@@ -81,6 +88,7 @@ model Cv {
   domains   String[]
   isActive  Boolean  @default(true)
   updatedAt DateTime @updatedAt
+  matches   Match[]
 
   @@index([userId])
 }
@@ -107,10 +115,34 @@ model Job {
   isRemote       Boolean            @default(false)
   remoteScope    String?
   eligibility    RemoteEligibility?
+  matches        Match[]
 
   @@index([foundAt])
   @@index([company])
   @@index([isRemote, eligibility])
+}
+
+// How well one job fits one CV. Saved only when total >= 40, so weak matches do not fill the free database.
+// Deleting a job or a CV deletes its matches too (onDelete: Cascade).
+model Match {
+  id        String     @id @default(cuid())
+  cvId      String
+  cv        Cv         @relation(fields: [cvId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stackFit  Int? // null when the job lists no skills
+  expFit    Int
+  levelFit  Int
+  domainFit Int
+  total     Int
+  label     MatchLabel
+  gaps      String[] // skills the job asks for and the CV does not have
+  notified  Boolean    @default(false)
+  createdAt DateTime   @default(now())
+
+  @@unique([cvId, jobId])
+  @@index([cvId, total]) // the job list: one CV, best matches first
+  @@index([jobId]) // lets "delete old jobs" find their matches fast
 }
 
 // One row per scan. A RUNNING row younger than 30 minutes is the lock that stops two scans at once.

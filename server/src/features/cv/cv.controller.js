@@ -1,6 +1,7 @@
 import path from 'node:path';
 import * as cvService from './cv.service.js';
 import { parseCvPdf } from './cvParser.js';
+import { rescoreCvInBackground } from '../matching/match.service.js';
 
 // Name from the form field "name", or the file name without ".pdf".
 function resolveName(req) {
@@ -25,6 +26,7 @@ export async function upload(req, res) {
   if (result.status === 'limit') {
     return res.status(409).json({ error: 'You already have a CV. Delete it first.' });
   }
+  rescoreCvInBackground(result.cv.id);
   res.status(201).json({ cv: result.cv });
 }
 
@@ -35,6 +37,8 @@ export async function list(req, res) {
 export async function update(req, res) {
   const cv = await cvService.updateCv(req.user.id, req.params.id, req.body);
   if (!cv) return res.status(404).json({ error: 'CV not found' });
+  // A new name does not change any score; everything else does.
+  if (Object.keys(req.body).some((key) => key !== 'name')) rescoreCvInBackground(cv.id);
   res.json({ cv });
 }
 
