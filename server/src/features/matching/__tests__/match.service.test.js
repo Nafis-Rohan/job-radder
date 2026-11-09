@@ -6,6 +6,7 @@ import {
   needsTooMuchExperience,
   saveMatchRows,
   scoreNewJobs,
+  rescoreCv,
   MIN_TOTAL,
   MAX_YEARS_GAP,
 } from '../match.service.js';
@@ -122,6 +123,49 @@ test('saveMatchRows skips rows whose job is gone, saves the rest, and does not c
   assert.equal(saved, 1);
   assert.equal(await prisma.match.count({ where: { cvId: cvRow.id } }), 1);
   assert.equal(await saveMatchRows([row(job.id)]), 0); // already there: not saved twice
+});
+
+test('rescoreCv scores old jobs too, drops matches that no longer fit, keeps alerted ones', async () => {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const cvRow = await prisma.cv.create({
+    data: { userId: user.id, name: 'c', textEnc: 'x', yearsExp: 2, level: 'MID', skills: ['node.js', 'postgresql'], keywords: [], domains: ['fintech'] },
+  });
+  const fit = { skills: ['node.js', 'postgresql'], minYears: 2, level: 'MID', domains: ['fintech'] };
+  const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  await prisma.job.createMany({
+    data: [
+      jobRow(1, { ...fit, foundAt: old }), // old job: must be scored now
+      jobRow(2, { ...fit, foundAt: old }), // will have an alerted match
+      jobRow(3, { skills: ['cobol'], minYears: 0, level: 'LEAD', domains: ['gaming'] }), // never fits
+    ],
+  });
+  const jobs = await prisma.job.findMany({ where: { source: MARK }, orderBy: { url: 'asc' } });
+  const [j1, j2, j3] = jobs;
+
+  // stale data from before the CV changed: a bad match for job 3 and an alerted, outdated match for job 2
+  const stale = { cvId: cvRow.id, stackFit: 0, expFit: 0, levelFit: 0, domainFit: 0, total: 45, label: 'PARTIAL', gaps: [] };
+  await prisma.match.create({ data: { ...stale, jobId: j3.id } });
+  await prisma.match.create({ data: { ...stale, jobId: j2.id, notified: true } });
+
+  await rescoreCv(cvRow.id);
+
+  const byJob = Object.fromEntries((await prisma.match.findMany({ where: { cvId: cvRow.id, job: { source: MARK } } })).map((m) => [m.jobId, m]));
+  assert.equal(byJob[j1.id].total, 100); // old job now scored
+  assert.equal(byJob[j3.id], undefined); // stale match removed
+  assert.equal(byJob[j2.id].total, 100); // alerted match updated...
+  assert.equal(byJob[j2.id].notified, true); // ...and still marked as alerted
+  assert.equal(Object.keys(byJob).length, 2);
+});
+
+test('rescoreCv does nothing for an inactive or missing CV', async () => {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const off = await prisma.cv.create({
+    data: { userId: user.id, name: 'off', textEnc: 'x', yearsExp: 2, level: 'MID', skills: [], keywords: [], domains: [], isActive: false },
+  });
+  await prisma.job.create({ data: jobRow(5) });
+  assert.deepEqual(await rescoreCv(off.id), { scored: 0, saved: 0 });
+  assert.deepEqual(await rescoreCv('no-such-cv'), { scored: 0, saved: 0 });
+  assert.equal(await prisma.match.count({ where: { cvId: off.id } }), 0);
 });
 
 test('a non-foreign-key database error is not hidden', async () => {

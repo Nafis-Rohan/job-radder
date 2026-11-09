@@ -79,6 +79,55 @@ async function matchCv(cv, where) {
   return { scored, saved };
 }
 
+// Same paging as matchCv, but only builds the rows (nothing is saved here).
+async function buildAllRowsForCv(cv) {
+  const rows = [];
+  let scored = 0;
+  let cursor;
+  for (;;) {
+    const jobs = await prisma.job.findMany({
+      select: JOB_FIELDS,
+      orderBy: { id: 'asc' },
+      take: PAGE_SIZE,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    });
+    if (jobs.length === 0) break;
+    rows.push(...buildMatchRows(cv, jobs));
+    scored += jobs.length;
+    cursor = jobs[jobs.length - 1].id;
+    if (jobs.length < PAGE_SIZE) break;
+  }
+  return { rows, scored };
+}
+
+// The CV changed (new upload, or skills / years / level / domains edited): score ALL jobs again.
+// Old matches that are no longer worthwhile are removed. Matches already sent as an alert
+// (notified = true) are kept and only get their new scores, so no alert is ever sent twice.
+export async function rescoreCv(cvId) {
+  const cv = await prisma.cv.findUnique({ where: { id: cvId }, select: { ...CV_FIELDS, isActive: true } });
+  if (!cv || !cv.isActive) return { scored: 0, saved: 0 };
+
+  const { rows, scored } = await buildAllRowsForCv(cv);
+  const alerted = await prisma.match.findMany({ where: { cvId, notified: true }, select: { jobId: true } });
+  const alertedIds = new Set(alerted.map((m) => m.jobId));
+  const fresh = rows.filter((r) => !alertedIds.has(r.jobId));
+
+  await prisma.match.deleteMany({ where: { cvId, notified: false } });
+  const saved = await saveMatchRows(fresh);
+  for (const row of rows.filter((r) => alertedIds.has(r.jobId))) {
+    const { cvId: _c, jobId, ...scores } = row;
+    await prisma.match.updateMany({ where: { cvId, jobId }, data: scores });
+  }
+
+  logger.info({ scored, saved }, 'CV rescored');
+  return { scored, saved };
+}
+
+// Called from the CV routes. The answer to the user does not wait for it; a failure is only logged.
+export function rescoreCvInBackground(cvId) {
+  rescoreCv(cvId).catch((err) => logger.error({ err }, 'CV rescoring failed'));
+}
+
 // After a scan: score the jobs found since `since` against every active CV.
 // (The caller passes a time a little before the scan started, so a small clock difference cannot miss a job.)
 export async function scoreNewJobs({ since }) {
