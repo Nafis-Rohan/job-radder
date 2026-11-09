@@ -65,7 +65,8 @@ test('deleting a CV deletes its matches, and the job stays', async () => {
   const { cv, job } = await makeCvAndJob();
   await prisma.match.create({ data: matchData(cv.id, job.id) });
   await prisma.cv.delete({ where: { id: cv.id } });
-  assert.equal(await prisma.match.count({ where: { jobId: job.id } }), 0);
+  // count only this test's CV: other tests run at the same time and may score other CVs against this job
+  assert.equal(await prisma.match.count({ where: { cvId: cv.id } }), 0);
   assert.equal(await prisma.job.count({ where: { id: job.id } }), 1);
 });
 

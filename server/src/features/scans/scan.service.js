@@ -2,6 +2,7 @@ import { prisma } from '../../shared/db/prisma.js';
 import { logger } from '../../shared/utils/logger.js';
 import { getCollectors } from '../collectors/index.js';
 import { saveJobs } from '../jobs/jobs.service.js';
+import { scoreNewJobs } from '../matching/match.service.js';
 import { cleanup } from './cleanup.service.js';
 
 // A scan that says RUNNING for longer than this is treated as dead (the server crashed or restarted).
@@ -46,7 +47,7 @@ function finalStatus(failed, total) {
 }
 
 // The work of a scan whose lock is already taken (`run` is its RUNNING row).
-async function executeScan(run, trigger, { collectors, save, clean, maxMinutes }) {
+async function executeScan(run, trigger, { collectors, save, clean, match, maxMinutes }) {
   try {
     const perSource = {};
     let newJobs = 0;
@@ -85,6 +86,16 @@ async function executeScan(run, trigger, { collectors, save, clean, maxMinutes }
     });
     logger.info({ runId: run.id, trigger, status, newJobs }, 'Scan finished');
 
+    // new jobs are scored against every active CV. The job list stays correct even if this fails
+    // (it is repeated after the next scan), so a problem here must not turn a good scan into a failure.
+    if (newJobs > 0) {
+      try {
+        await match({ since: new Date(run.startedAt.getTime() - 5 * 60 * 1000) });
+      } catch (err) {
+        logger.error({ errMessage: err.message }, 'Scoring new jobs failed');
+      }
+    }
+
     // old data is removed after the scan; a cleanup problem must not turn a good scan into a failure
     try {
       await clean();
@@ -105,6 +116,7 @@ const defaults = () => ({
   collectors: getCollectors(),
   save: saveJobs,
   clean: cleanup,
+  match: scoreNewJobs,
   maxMinutes: MAX_SCAN_MINUTES,
 });
 
