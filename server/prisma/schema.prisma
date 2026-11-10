@@ -51,18 +51,19 @@ enum RunStatus {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  username       String    @unique
+  id             String            @id @default(cuid())
+  username       String            @unique
   passwordHash   String
-  role           Role      @default(USER)
+  role           Role              @default(USER)
   totpSecretEnc  String?
-  totpEnabled    Boolean   @default(false)
-  failedLogins   Int       @default(0)
+  totpEnabled    Boolean           @default(false)
+  failedLogins   Int               @default(0)
   lockedUntil    DateTime?
   telegramChatId String?
-  alertThreshold Int       @default(50)
-  createdAt      DateTime  @default(now())
+  alertThreshold Int               @default(50)
+  createdAt      DateTime          @default(now())
   cvs            Cv[]
+  favorites      FavoriteCompany[]
 }
 
 model LoginEvent {
@@ -157,4 +158,18 @@ model ScanRun {
   alertsSent Int       @default(0)
 
   @@index([startedAt])
+}
+
+// A company the user wants to watch. The user must give its career page: the scraper reads the jobs from there.
+// Jobs stay shared by all users; "is this job from a favorite" is worked out when the list is read.
+model FavoriteCompany {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  aliases    String[] // other spellings of the name, e.g. "GP" for "Grameenphone"
+  careersUrl String // https career page, e.g. https://vivasoftltd.com/career/
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, name])
 }
