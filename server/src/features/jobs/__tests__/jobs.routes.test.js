@@ -51,6 +51,36 @@ test('the list gets the logged-in user id and the checked query', async () => {
   assert.deepEqual(calls[0].query, { since: '7d', level: ['JUNIOR', 'MID'], minScore: 50, page: 1, limit: 5 });
 });
 
+test('one job: 200 with the job, 404 when it does not exist; the user is the logged-in one', async () => {
+  const calls = [];
+  const get = async (userId, id) => {
+    calls.push({ userId, id });
+    return id === 'j1' ? { id: 'j1', title: 'Dev', match: null } : null;
+  };
+  const router = buildJobsRouter({ guard: loginAs('user-1'), controller: buildJobsController({ get }) });
+
+  await withServer(router, async (base) => {
+    const ok = await fetch(`${base}/j1`);
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { job: { id: 'j1', title: 'Dev', match: null } });
+
+    const missing = await fetch(`${base}/nope`);
+    assert.equal(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: 'Job not found' });
+  });
+  assert.deepEqual(calls, [{ userId: 'user-1', id: 'j1' }, { userId: 'user-1', id: 'nope' }]);
+});
+
+test('one job: not logged in gives 401 (real app)', async () => {
+  const server = app.listen(0);
+  try {
+    const res = await fetch(`http://localhost:${server.address().port}/api/jobs/any-id`);
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
 test('a bad filter gets 400 with the field name, and the list is not called', async () => {
   let called = false;
   const list = async () => {
