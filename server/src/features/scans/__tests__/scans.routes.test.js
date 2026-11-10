@@ -5,6 +5,7 @@ import app from '../../../app.js';
 import { prisma } from '../../../shared/db/prisma.js';
 import { buildLatest, getLatestScan } from '../latestScan.service.js';
 import { buildScansRouter } from '../scans.routes.js';
+import { listen } from '../../../shared/testing/listen.js';
 
 const NOW = new Date('2026-11-10T12:00:00Z');
 const minutesAgo = (m) => new Date(NOW.getTime() - m * 60 * 1000);
@@ -66,7 +67,7 @@ test('getLatestScan returns the newest real scan and the last good one, and show
 
 // ---- routes ----
 test('not logged in: 401 (real app)', async () => {
-  const server = app.listen(0);
+  const server = await listen(app);
   try {
     const res = await fetch(`http://localhost:${server.address().port}/api/scans/latest`);
     assert.equal(res.status, 401);
@@ -79,7 +80,7 @@ test('logged in: 200 with what the service returns', async () => {
   const answer = { scan: { status: 'SUCCESS', startedAt: '2026-11-10T06:00:00.000Z', finishedAt: '2026-11-10T06:01:00.000Z', newJobs: 3 }, lastSuccessAt: '2026-11-10T06:01:00.000Z' };
   const guard = [(req, res, next) => { req.user = { id: 'u', role: 'USER' }; next(); }];
   const router = buildScansRouter({ guard, latest: async () => answer });
-  const server = express().use('/api/scans', router).listen(0);
+  const server = await listen(express().use('/api/scans', router));
   try {
     const res = await fetch(`http://localhost:${server.address().port}/api/scans/latest`);
     assert.equal(res.status, 200);

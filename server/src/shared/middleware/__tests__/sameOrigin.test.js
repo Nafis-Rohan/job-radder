@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { requireSameOrigin } from '../sameOrigin.js';
+import { listen } from '../../testing/listen.js';
 
 const SITE = 'http://localhost:5173';
 
@@ -9,7 +10,7 @@ async function withServer(fn) {
   const app = express();
   app.use(requireSameOrigin([`${SITE}/`])); // a trailing slash in the setting must not matter
   app.all('/thing', (req, res) => res.json({ ok: true }));
-  const server = app.listen(0);
+  const server = await listen(app);
   try {
     await fn(`http://localhost:${server.address().port}/thing`);
   } finally {

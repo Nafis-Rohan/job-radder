@@ -111,19 +111,28 @@ async function buildAllRowsForCv(cv, alertedIds) {
 // (notified = true) are kept and only get their new scores, so no alert is ever sent twice.
 // Delete + insert + updates are ONE transaction: if anything fails, the old matches stay as they were.
 export async function rescoreCv(cvId) {
-  const cv = await prisma.cv.findUnique({ where: { id: cvId }, select: { ...CV_FIELDS, isActive: true } });
-  if (!cv || !cv.isActive) return { scored: 0, saved: 0 };
-
-  // A job can be deleted (old-jobs cleanup) while we work: the insert then fails with P2003.
-  // Scoring again is cheap and the second try sees the job gone.
+  // A job can be deleted (old-jobs cleanup) or the CV removed while we work. In the transaction below the jobs are
+  // locked, so a job that is still there cannot vanish before we are done, and jobs that are already gone are skipped.
+  // What is left (the CV deleted meanwhile = P2003, or two transactions waiting for each other = P2034) is tried again
+  // from the start: the second try reads the new situation.
   for (let attempt = 1; ; attempt++) {
     try {
+      const cv = await prisma.cv.findUnique({ where: { id: cvId }, select: { ...CV_FIELDS, isActive: true } });
+      if (!cv || !cv.isActive) return { scored: 0, saved: 0 };
+
       const alerted = await prisma.match.findMany({ where: { cvId, notified: true }, select: { jobId: true } });
       const { rows, alertedRows, scored } = await buildAllRowsForCv(cv, new Set(alerted.map((m) => m.jobId)));
 
       const saved = await prisma.$transaction(async (tx) => {
         await tx.match.deleteMany({ where: { cvId, notified: false } });
-        const { count } = await tx.match.createMany({ data: rows, skipDuplicates: true });
+
+        let count = 0;
+        if (rows.length > 0) {
+          // FOR KEY SHARE: these jobs cannot be deleted until this transaction ends
+          const still = await tx.$queryRaw`SELECT id FROM "Job" WHERE id = ANY(${rows.map((r) => r.jobId)}::text[]) FOR KEY SHARE`;
+          const alive = new Set(still.map((row) => row.id));
+          ({ count } = await tx.match.createMany({ data: rows.filter((r) => alive.has(r.jobId)), skipDuplicates: true }));
+        }
         for (const { cvId: _c, jobId, ...scores } of alertedRows) {
           await tx.match.updateMany({ where: { cvId, jobId }, data: scores });
         }
@@ -133,7 +142,7 @@ export async function rescoreCv(cvId) {
       logger.info({ scored, saved }, 'CV rescored');
       return { scored, saved };
     } catch (err) {
-      if (err.code !== 'P2003' || attempt >= 3) throw err;
+      if ((err.code !== 'P2003' && err.code !== 'P2034') || attempt >= 4) throw err;
     }
   }
 }
@@ -167,8 +176,12 @@ export function rescoreCvInBackground(cvId) {
 
 // After a scan: score the jobs found since `since` against every active CV.
 // (The caller passes a time a little before the scan started, so a small clock difference cannot miss a job.)
-export async function scoreNewJobs({ since }) {
-  const cvs = await prisma.cv.findMany({ where: { isActive: true }, select: CV_FIELDS });
+// `cvIds` (optional) limits it to those CVs; without it every active CV is scored (what a scan does).
+export async function scoreNewJobs({ since, cvIds }) {
+  const cvs = await prisma.cv.findMany({
+    where: { isActive: true, ...(cvIds ? { id: { in: cvIds } } : {}) },
+    select: CV_FIELDS,
+  });
   let scored = 0;
   let saved = 0;
   for (const cv of cvs) {

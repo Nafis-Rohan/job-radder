@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { buildInternalRouter } from '../internal.routes.js';
 import { secretMatches } from '../../../shared/middleware/cronAuth.js';
+import { listen } from '../../../shared/testing/listen.js';
 
 const SECRET = 'a'.repeat(40);
 
@@ -19,7 +20,7 @@ const fakeStart = (calls = [], { status = 'started', done = Promise.resolve() } 
 async function withServer(options, fn) {
   const app = express();
   app.use('/api/internal', buildInternalRouter(options));
-  const server = app.listen(0);
+  const server = await listen(app);
   const base = `http://localhost:${server.address().port}/api/internal`;
   try {
     await fn(base);

@@ -4,6 +4,7 @@ import express from 'express';
 import app from '../../../app.js';
 import { buildJobsRouter } from '../jobs.routes.js';
 import { buildJobsController } from '../jobs.controller.js';
+import { listen } from '../../../shared/testing/listen.js';
 
 // pretend a user is logged in (no database, no cookie needed)
 const loginAs = (id) => [
@@ -14,7 +15,7 @@ const loginAs = (id) => [
 ];
 
 async function withServer(router, fn) {
-  const server = express().use(express.json()).use('/api/jobs', router).listen(0);
+  const server = await listen(express().use(express.json()).use('/api/jobs', router));
   try {
     await fn(`http://localhost:${server.address().port}/api/jobs`);
   } finally {
@@ -23,7 +24,7 @@ async function withServer(router, fn) {
 }
 
 test('not logged in: 401 (real app)', async () => {
-  const server = app.listen(0);
+  const server = await listen(app);
   try {
     const res = await fetch(`http://localhost:${server.address().port}/api/jobs`);
     assert.equal(res.status, 401);
@@ -72,7 +73,7 @@ test('one job: 200 with the job, 404 when it does not exist; the user is the log
 });
 
 test('one job: not logged in gives 401 (real app)', async () => {
-  const server = app.listen(0);
+  const server = await listen(app);
   try {
     const res = await fetch(`http://localhost:${server.address().port}/api/jobs/any-id`);
     assert.equal(res.status, 401);

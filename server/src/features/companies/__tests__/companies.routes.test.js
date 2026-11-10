@@ -4,6 +4,7 @@ import express from 'express';
 import app from '../../../app.js';
 import { buildCompaniesRouter } from '../companies.routes.js';
 import { buildCompaniesController } from '../companies.controller.js';
+import { listen } from '../../../shared/testing/listen.js';
 
 const loginAs = (id) => [
   (req, res, next) => {
@@ -33,7 +34,7 @@ function fakeService(answer = {}) {
 
 async function withServer(service, fn) {
   const router = buildCompaniesRouter({ guard: loginAs('user-1'), controller: buildCompaniesController({ service }) });
-  const server = express().use(express.json()).use('/api/companies', router).listen(0);
+  const server = await listen(express().use(express.json()).use('/api/companies', router));
   const base = `http://localhost:${server.address().port}/api/companies`;
   const send = (path, method, body) =>
     fetch(`${base}${path}`, {
@@ -51,7 +52,7 @@ async function withServer(service, fn) {
 const body = { name: 'Vivasoft', careersUrl: 'https://vivasoftltd.com/career/' };
 
 test('not logged in: 401 on every route (real app)', async () => {
-  const server = app.listen(0);
+  const server = await listen(app);
   const base = `http://localhost:${server.address().port}/api/companies`;
   try {
     assert.equal((await fetch(base)).status, 401);

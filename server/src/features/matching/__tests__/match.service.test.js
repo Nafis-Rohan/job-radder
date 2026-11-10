@@ -93,7 +93,7 @@ test('scoreNewJobs saves matches for recent jobs of active CVs only, and is safe
   });
 
   const since = new Date(Date.now() - 60 * 1000);
-  await scoreNewJobs({ since });
+  await scoreNewJobs({ since, cvIds: [active.id, inactive.id] }); // only this test's CVs: other test files share the database
 
   // only look at this test's own jobs: other test files create jobs at the same time in the same database
   const mine = { cvId: active.id, job: { source: MARK } };
@@ -105,7 +105,7 @@ test('scoreNewJobs saves matches for recent jobs of active CVs only, and is safe
   assert.equal(await prisma.match.count({ where: { cvId: inactive.id, job: { source: MARK } } }), 0);
 
   // running it again must not create copies
-  await scoreNewJobs({ since });
+  await scoreNewJobs({ since, cvIds: [active.id, inactive.id] }); // only this test's CVs: other test files share the database
   assert.equal(await prisma.match.count({ where: mine }), 1);
 });
 
@@ -212,4 +212,21 @@ test('rescoreCv does nothing for an inactive or missing CV', async () => {
 test('a non-foreign-key database error is not hidden', async () => {
   const badRow = { cvId: 'x', jobId: 'y', stackFit: null, expFit: 70, levelFit: 70, domainFit: 50, total: 63, label: 'NOT_A_LABEL', gaps: [] };
   await assert.rejects(saveMatchRows([badRow]));
+});
+
+test('scoreNewJobs with cvIds scores only those CVs; without it, every active CV', async () => {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const base = { userId: user.id, textEnc: 'x', yearsExp: 2, level: 'MID', skills: ['node.js'], keywords: [], domains: [] };
+  const first = await prisma.cv.create({ data: { ...base, name: 'first' } });
+  const second = await prisma.cv.create({ data: { ...base, name: 'second' } });
+  await prisma.job.create({ data: jobRow(11, { skills: ['node.js'], minYears: 2, level: 'MID' }) });
+  const since = new Date(Date.now() - 60 * 1000);
+  const mine = (cv) => prisma.match.count({ where: { cvId: cv.id, job: { source: MARK } } });
+
+  await scoreNewJobs({ since, cvIds: [first.id] });
+  assert.equal(await mine(first), 1);
+  assert.equal(await mine(second), 0);
+
+  await scoreNewJobs({ since }); // no list: all active CVs (this test's second CV too)
+  assert.equal(await mine(second), 1);
 });

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test --test-concurrency=1"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +17,7 @@
     "@prisma/client": "^7.10.0",
     "axios": "^1.21.0",
     "bcrypt": "^6.0.0",
+    "cheerio": "^1.2.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^18.0.6",
     "express": "^5.2.1",
