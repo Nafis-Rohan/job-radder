@@ -7,7 +7,7 @@ const parse = (query) => listJobsQuerySchema.safeParse(query);
 test('an empty query gets the defaults', () => {
   const result = parse({});
   assert.equal(result.success, true);
-  assert.deepEqual(result.data, { since: 'all', page: 1, limit: 20 });
+  assert.deepEqual(result.data, { since: 'all', favOnly: false, page: 1, limit: 20 });
 });
 
 test('numbers arrive as text from the URL and are converted', () => {
@@ -54,8 +54,15 @@ test('source and company are trimmed; empty means no filter', () => {
 });
 
 test('unknown parameters are ignored, not saved', () => {
-  const { data } = parse({ favOnly: 'true', hack: '1' });
-  assert.deepEqual(Object.keys(data).sort(), ['limit', 'page', 'since']);
+  const { data } = parse({ type: 'bd', hack: '1' });
+  assert.deepEqual(Object.keys(data).sort(), ['favOnly', 'limit', 'page', 'since']);
+});
+
+test('favOnly: true / 1 are on, false / 0 / empty are off, anything else is an error', () => {
+  for (const on of ['true', 'TRUE', '1']) assert.equal(parse({ favOnly: on }).data.favOnly, true, on);
+  for (const off of ['false', 'False', '0', '']) assert.equal(parse({ favOnly: off }).data.favOnly, false, off);
+  assert.equal(parse({}).data.favOnly, false);
+  for (const bad of ['yes', 'maybe', '2']) assert.equal(parse({ favOnly: bad }).success, false, bad);
 });
 
 test('the job id parameter must not be empty', () => {

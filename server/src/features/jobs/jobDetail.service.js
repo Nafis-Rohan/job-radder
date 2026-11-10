@@ -1,5 +1,7 @@
 import { prisma } from '../../shared/db/prisma.js';
 import { effectiveWeights } from '../matching/score.js';
+import { buildCompanyMatcher } from '../companies/companyMatcher.js';
+import { listFavorites } from '../companies/companies.service.js';
 import { LIST_JOB_FIELDS, NEW_HOURS } from './jobList.service.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -18,11 +20,12 @@ const MATCH_FIELDS = {
 };
 
 // Pure: the job row (with this user's match, if any) -> the answer.
-export function toDetail(job, now = new Date()) {
+export function toDetail(job, now = new Date(), isFavorite = () => false) {
   const { matches, ...fields } = job;
   const match = matches[0] ?? null;
   return {
     ...fields,
+    isFavorite: isFavorite(job.company),
     isNew: job.foundAt.getTime() >= now.getTime() - NEW_HOURS * HOUR,
     yearsStated: job.minYears !== null,
     expired: job.deadline !== null && job.deadline.getTime() <= now.getTime(),
@@ -47,5 +50,6 @@ export async function getJob(userId, id, now = new Date()) {
       },
     },
   });
-  return job ? toDetail(job, now) : null;
+  if (!job) return null;
+  return toDetail(job, now, buildCompanyMatcher(await listFavorites(userId)));
 }

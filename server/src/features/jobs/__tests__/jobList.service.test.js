@@ -167,3 +167,57 @@ test('pages: limit 3 gives 3 then 1; total and pages are for the whole result', 
   assert.equal(one.pages, 2);
   assert.deepEqual(titles(await listJobs(user1.id, q({ limit: '3', page: '5' }))), []);
 });
+
+// ---- favorites ----
+const addFavorite = (userId, name, aliases = []) =>
+  prisma.favoriteCompany.create({ data: { userId, name, aliases, careersUrl: 'https://example.com/careers' } });
+
+test('favOnly adds a company check; without it there is none', () => {
+  const on = buildJobFilter(q({ favOnly: 'true' }), NOW, ['Acme Corp']);
+  assert.deepEqual(on.AND[1], { company: { in: ['Acme Corp'] } });
+  assert.equal(buildJobFilter(q(), NOW, ['Acme Corp']).AND.length, 1); // names are ignored when favOnly is off
+  assert.deepEqual(buildJobFilter(q({ favOnly: 'true' }), NOW).AND[1], { company: { in: [] } }); // no favorites: nothing matches
+});
+
+test('toListItem: isFavorite comes from the matcher function', () => {
+  const match = { total: 70, label: 'GOOD', gaps: [], job: { id: 'j', company: 'Acme Corp', minYears: 1, foundAt: NOW } };
+  assert.equal(toListItem(match, NOW).isFavorite, false); // no matcher: never a favorite
+  assert.equal(toListItem(match, NOW, (name) => name === 'Acme Corp').isFavorite, true);
+});
+
+test('isFavorite marks the jobs of my favorite companies, whatever the spelling', async () => {
+  const { user1 } = await seed();
+  await addFavorite(user1.id, 'ACME CORP LTD.'); // J5 is from "Acme Corp"
+  const flags = Object.fromEntries((await listJobs(user1.id, q())).jobs.map((j) => [j.title, j.isFavorite]));
+  assert.deepEqual(flags, { J1: false, J5: true, J2: false, J3: false });
+});
+
+test('favOnly shows only jobs of my favorites (name or alias), and total / pages follow', async () => {
+  const { user1 } = await seed();
+  await addFavorite(user1.id, 'Acme Corp');
+  const byName = await listJobs(user1.id, q({ favOnly: 'true' }));
+  assert.deepEqual(titles(byName), ['J5']);
+  assert.equal(byName.total, 1);
+
+  await prisma.favoriteCompany.deleteMany({ where: { userId: user1.id } });
+  await addFavorite(user1.id, 'Something Else', ['Some Co']); // J1, J2, J3 are from "Some Co"
+  assert.deepEqual(titles(await listJobs(user1.id, q({ favOnly: 'true' }))), ['J1', 'J2', 'J3']);
+});
+
+test('favOnly with no favorites gives an empty list, and another user\'s favorite does not count', async () => {
+  const { user1, user2 } = await seed();
+  assert.deepEqual((await listJobs(user1.id, q({ favOnly: 'true' }))).jobs, []);
+  await addFavorite(user2.id, 'Acme Corp'); // only user 2 has it
+  const result = await listJobs(user1.id, q({ favOnly: 'true' }));
+  assert.deepEqual(result.jobs, []);
+  assert.equal(result.total, 0);
+  assert.equal((await listJobs(user1.id, q())).jobs.every((j) => j.isFavorite === false), true);
+});
+
+test('favOnly combines with the other filters', async () => {
+  const { user1 } = await seed();
+  await addFavorite(user1.id, 'Something Else', ['Some Co', 'Acme Corp']); // J1, J2, J3, J5
+  assert.deepEqual(titles(await listJobs(user1.id, q({ favOnly: 'true', level: 'MID' }))), ['J5', 'J2']);
+  assert.deepEqual(titles(await listJobs(user1.id, q({ favOnly: 'true', company: 'acme' }))), ['J5']);
+  assert.deepEqual(titles(await listJobs(user1.id, q({ favOnly: 'false', company: 'acme' }))), ['J5']);
+});

@@ -48,7 +48,7 @@ test('the list gets the logged-in user id and the checked query', async () => {
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].userId, 'user-1'); // always the logged-in user, never one from the URL
-  assert.deepEqual(calls[0].query, { since: '7d', level: ['JUNIOR', 'MID'], minScore: 50, page: 1, limit: 5 });
+  assert.deepEqual(calls[0].query, { since: '7d', level: ['JUNIOR', 'MID'], minScore: 50, favOnly: false, page: 1, limit: 5 });
 });
 
 test('one job: 200 with the job, 404 when it does not exist; the user is the logged-in one', async () => {
