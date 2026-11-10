@@ -32,8 +32,10 @@ function fakeService(answer = {}) {
   };
 }
 
-async function withServer(service, fn) {
-  const router = buildCompaniesRouter({ guard: loginAs('user-1'), controller: buildCompaniesController({ service }) });
+// `changed` collects the user ids the "favorites changed" hook was called with (no database work in these tests)
+async function withServer(service, fn, changed = []) {
+  const onFavoritesChanged = (userId) => changed.push(userId);
+  const router = buildCompaniesRouter({ guard: loginAs('user-1'), controller: buildCompaniesController({ service, onFavoritesChanged }) });
   const server = await listen(express().use(express.json()).use('/api/companies', router));
   const base = `http://localhost:${server.address().port}/api/companies`;
   const send = (path, method, body) =>
@@ -149,4 +151,37 @@ test('delete: 200 or 404', async () => {
   await withServer(no.service, async (send) => {
     assert.equal((await send('/nope', 'DELETE')).status, 404);
   });
+});
+
+test('after a favorite is added, removed, or gets a new name or aliases, the jobs are scored again', async () => {
+  const created = fakeService({ create: { status: 'ok', company: {} }, update: { status: 'ok', company: {} }, delete: true });
+  const changed = [];
+  await withServer(created.service, async (send) => {
+    await send('', 'POST', body);
+    assert.deepEqual(changed, ['user-1']);
+    await send('/c1', 'PATCH', { name: 'New Name' });
+    assert.equal(changed.length, 2);
+    await send('/c1', 'PATCH', { aliases: ['VS'] });
+    assert.equal(changed.length, 3);
+    await send('/c1', 'DELETE');
+    assert.equal(changed.length, 4);
+  }, changed);
+});
+
+test('no rescoring when only the career page link changes, or when nothing was changed', async () => {
+  const ok = fakeService({ update: { status: 'ok', company: {} } });
+  const changed = [];
+  await withServer(ok.service, async (send) => {
+    await send('/c1', 'PATCH', { careersUrl: 'https://vivasoftltd.com/jobs/' });
+  }, changed);
+  assert.deepEqual(changed, []);
+
+  const failing = fakeService({ create: { status: 'duplicate' }, update: { status: 'notfound' }, delete: false });
+  await withServer(failing.service, async (send) => {
+    await send('', 'POST', body);
+    await send('/c1', 'PATCH', { name: 'x' });
+    await send('/c1', 'DELETE');
+    await send('', 'POST', { name: 'Bad' }); // invalid
+  }, changed);
+  assert.deepEqual(changed, []);
 });
