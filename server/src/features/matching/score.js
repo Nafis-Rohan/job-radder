@@ -52,6 +52,19 @@ export function labelFor(total) {
 }
 
 // cv  = { skills, yearsExp, level, domains }
+// The weights that really made a total, rounded to 3 decimals (for showing).
+// Without a stack part (the job lists no skills) the other three share its weight, same as in scoreMatch.
+export function effectiveWeights(hasStack) {
+  const sum = hasStack ? WEIGHTS.stack + WEIGHTS.exp + WEIGHTS.level + WEIGHTS.domain : WEIGHTS.exp + WEIGHTS.level + WEIGHTS.domain;
+  const round = (n) => Math.round(n * 1000) / 1000;
+  return {
+    stack: hasStack ? round(WEIGHTS.stack / sum) : 0,
+    exp: round(WEIGHTS.exp / sum),
+    level: round(WEIGHTS.level / sum),
+    domain: round(WEIGHTS.domain / sum),
+  };
+}
+
 // job = { skills, minYears, level, domains }
 // Returns { stackFit, expFit, levelFit, domainFit, total, label, gaps }.
 export function scoreMatch(cv, job) {

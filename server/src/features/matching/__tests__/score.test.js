@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreMatch, stackFit, expFit, levelFit, domainFit, labelFor, WEIGHTS } from '../score.js';
+import { scoreMatch, stackFit, expFit, levelFit, domainFit, labelFor, effectiveWeights, WEIGHTS } from '../score.js';
 
 // a mid-level backend developer in fintech
 const cv = {
@@ -74,6 +74,21 @@ test('job 4: the job lists no skills -> stackFit is null and the other three sha
   assert.equal(result.total, 63); // (0.2*70 + 0.2*70 + 0.2*50) / 0.6
   assert.equal(result.label, 'GOOD');
   assert.deepEqual(result.gaps, []);
+});
+
+test('effectiveWeights: normal weights, or stack 0 and the rest sharing it', () => {
+  assert.deepEqual(effectiveWeights(true), { stack: 0.4, exp: 0.2, level: 0.2, domain: 0.2 });
+  assert.deepEqual(effectiveWeights(false), { stack: 0, exp: 0.333, level: 0.333, domain: 0.333 });
+});
+
+test('effectiveWeights really are the weights scoreMatch used (total = sum of weight x part)', () => {
+  const cv = { skills: ['node.js'], yearsExp: 2, level: 'MID', domains: ['fintech'] };
+  for (const skills of [[], ['node.js', 'docker']]) {
+    const s = scoreMatch(cv, { skills, minYears: 3, level: 'SENIOR', domains: ['fintech'] });
+    const w = effectiveWeights(s.stackFit !== null);
+    const sum = w.stack * (s.stackFit ?? 0) + w.exp * s.expFit + w.level * s.levelFit + w.domain * s.domainFit;
+    assert.ok(Math.abs(sum - s.total) <= 1, `${sum} vs ${s.total}`); // rounded weights: at most 1 point apart
+  }
 });
 
 test('job 5: most skills, a year more experience asked -> GOOD', () => {
