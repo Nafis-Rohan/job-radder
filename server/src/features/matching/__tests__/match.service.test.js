@@ -8,6 +8,7 @@ import {
   scoreNewJobs,
   rescoreCv,
   rescoreCvInBackground,
+  rescoreUserInBackground,
   MIN_TOTAL,
   MAX_YEARS_GAP,
 } from '../match.service.js';
@@ -93,7 +94,7 @@ test('scoreNewJobs saves matches for recent jobs of active CVs only, and is safe
   });
 
   const since = new Date(Date.now() - 60 * 1000);
-  await scoreNewJobs({ since });
+  await scoreNewJobs({ since, cvIds: [active.id, inactive.id] }); // only this test's CVs: other test files share the database
 
   // only look at this test's own jobs: other test files create jobs at the same time in the same database
   const mine = { cvId: active.id, job: { source: MARK } };
@@ -105,7 +106,7 @@ test('scoreNewJobs saves matches for recent jobs of active CVs only, and is safe
   assert.equal(await prisma.match.count({ where: { cvId: inactive.id, job: { source: MARK } } }), 0);
 
   // running it again must not create copies
-  await scoreNewJobs({ since });
+  await scoreNewJobs({ since, cvIds: [active.id, inactive.id] }); // only this test's CVs: other test files share the database
   assert.equal(await prisma.match.count({ where: mine }), 1);
 });
 
@@ -212,4 +213,80 @@ test('rescoreCv does nothing for an inactive or missing CV', async () => {
 test('a non-foreign-key database error is not hidden', async () => {
   const badRow = { cvId: 'x', jobId: 'y', stackFit: null, expFit: 70, levelFit: 70, domainFit: 50, total: 63, label: 'NOT_A_LABEL', gaps: [] };
   await assert.rejects(saveMatchRows([badRow]));
+});
+
+test('scoreNewJobs with cvIds scores only those CVs; without it, every active CV', async () => {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const base = { userId: user.id, textEnc: 'x', yearsExp: 2, level: 'MID', skills: ['node.js'], keywords: [], domains: [] };
+  const first = await prisma.cv.create({ data: { ...base, name: 'first' } });
+  const second = await prisma.cv.create({ data: { ...base, name: 'second' } });
+  await prisma.job.create({ data: jobRow(11, { skills: ['node.js'], minYears: 2, level: 'MID' }) });
+  const since = new Date(Date.now() - 60 * 1000);
+  const mine = (cv) => prisma.match.count({ where: { cvId: cv.id, job: { source: MARK } } });
+
+  await scoreNewJobs({ since, cvIds: [first.id] });
+  assert.equal(await mine(first), 1);
+  assert.equal(await mine(second), 0);
+
+  await scoreNewJobs({ since }); // no list: all active CVs (this test's second CV too)
+  assert.equal(await mine(second), 1);
+});
+
+// ---- favorite companies: every job of a favorite gets a Match row, whatever its score ----
+const favCv = { id: 'cv1', skills: ['node.js', 'postgresql'], yearsExp: 1, level: 'JUNIOR', domains: ['fintech'] };
+const weakJob = { id: 'weak', company: 'Fav Co', skills: ['cobol'], minYears: 0, level: 'LEAD', domains: ['gaming'] };
+const seniorJob = { id: 'senior', company: 'Fav Co', skills: ['node.js'], minYears: 9, level: 'MID', domains: ['fintech'] };
+const isFav = (name) => name === 'Fav Co';
+
+test('buildMatchRows: a favorite\'s weak or far-too-senior job is kept; the same job of another company is not', () => {
+  assert.deepEqual(buildMatchRows(favCv, [weakJob, seniorJob]), []); // nobody's favorite: both dropped
+  const rows = buildMatchRows(favCv, [weakJob, seniorJob], isFav);
+  assert.deepEqual(rows.map((r) => r.jobId), ['weak', 'senior']);
+  assert.equal(rows[0].label, 'WEAK');
+  assert.ok(rows[0].total < MIN_TOTAL);
+  const other = buildMatchRows(favCv, [{ ...weakJob, id: 'x', company: 'Other Co' }], isFav);
+  assert.deepEqual(other, []);
+});
+
+async function favSetup() {
+  const user = await prisma.user.create({ data: { username: MARK, passwordHash: 'x' } });
+  const cvRow = await prisma.cv.create({
+    data: { userId: user.id, name: 'c', textEnc: 'x', yearsExp: 1, level: 'JUNIOR', skills: ['node.js'], keywords: [], domains: [] },
+  });
+  const weak = { skills: ['cobol'], minYears: 0, level: 'LEAD', domains: ['gaming'] };
+  await prisma.job.create({ data: jobRow(21, { ...weak, company: 'Fav Cleanup Name Ltd' }) });
+  await prisma.job.create({ data: jobRow(22, { ...weak, company: 'Not A Favorite' }) });
+  const rowsOf = () => prisma.match.findMany({ where: { cvId: cvRow.id, job: { source: MARK } }, include: { job: { select: { company: true } } } });
+  return { user, cvRow, rowsOf };
+}
+
+test('scoreNewJobs saves a Match row for a favorite\'s weak job and none for another company\'s', async () => {
+  const { user, cvRow, rowsOf } = await favSetup();
+  await prisma.favoriteCompany.create({ data: { userId: user.id, name: 'Fav Cleanup Name', careersUrl: 'https://example.com/careers' } });
+  await scoreNewJobs({ since: new Date(Date.now() - 60 * 1000), cvIds: [cvRow.id] });
+  const rows = await rowsOf();
+  assert.deepEqual(rows.map((r) => r.job.company), ['Fav Cleanup Name Ltd']);
+  assert.equal(rows[0].label, 'WEAK');
+});
+
+test('rescoreCv: a favorite\'s jobs get rows; when the favorite is gone the rows go too', async () => {
+  const { user, cvRow, rowsOf } = await favSetup();
+  assert.equal((await rowsOf()).length, 0);
+
+  await prisma.favoriteCompany.create({ data: { userId: user.id, name: 'Not A Favorite', aliases: [], careersUrl: 'https://example.com/careers' } });
+  await rescoreCv(cvRow.id);
+  assert.deepEqual((await rowsOf()).map((r) => r.job.company), ['Not A Favorite']);
+
+  await prisma.favoriteCompany.deleteMany({ where: { userId: user.id } });
+  await rescoreCv(cvRow.id);
+  assert.equal((await rowsOf()).length, 0);
+});
+
+test('rescoreUserInBackground scores the active CVs of that user only, and an unknown user does nothing', async () => {
+  const { user, cvRow, rowsOf } = await favSetup();
+  await prisma.favoriteCompany.create({ data: { userId: user.id, name: 'Not A Favorite', careersUrl: 'https://example.com/careers' } });
+  await rescoreUserInBackground(user.id);
+  assert.equal((await rowsOf()).length, 1);
+  await rescoreUserInBackground('no-such-user'); // no CVs: nothing happens, no error
+  assert.equal(await prisma.match.count({ where: { cvId: cvRow.id, job: { source: MARK } } }), 1);
 });

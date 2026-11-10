@@ -5,6 +5,7 @@ import app from '../../../app.js';
 import { requireRole } from '../../../shared/middleware/requireRole.js';
 import { buildAdminRouter } from '../admin.routes.js';
 import { buildAdminController } from '../admin.controller.js';
+import { listen } from '../../../shared/testing/listen.js';
 
 // pretend a user with this role is logged in (no database, no cookie needed)
 const loginAs = (role) => [
@@ -25,7 +26,7 @@ const fakeStart =
   };
 
 async function withServer(router, fn) {
-  const server = express().use(express.json()).use('/api/admin', router).listen(0);
+  const server = await listen(express().use(express.json()).use('/api/admin', router));
   const base = `http://localhost:${server.address().port}/api/admin`;
   try {
     await fn(base);
@@ -35,7 +36,7 @@ async function withServer(router, fn) {
 }
 
 test('not logged in: 401 on every route (real app)', async () => {
-  const server = app.listen(0);
+  const server = await listen(app);
   const base = `http://localhost:${server.address().port}/api/admin`;
   try {
     assert.equal((await fetch(`${base}/scan-runs`)).status, 401);

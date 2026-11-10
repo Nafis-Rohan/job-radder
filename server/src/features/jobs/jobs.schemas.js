@@ -22,6 +22,18 @@ const text = z.preprocess(
   z.string().trim().min(1).max(100).optional(),
 );
 
+// ?favOnly=true / false (also 1 / 0). Plain z.coerce.boolean would turn the text "false" into true.
+const flag = z.preprocess(
+  (value) => {
+    if (value === undefined) return undefined;
+    const text = String(value).trim().toLowerCase();
+    if (text === 'true' || text === '1') return true;
+    if (text === 'false' || text === '0' || text === '') return false;
+    return value; // anything else is reported as an error
+  },
+  z.boolean().default(false),
+);
+
 // Query string of GET /api/jobs. Unknown parameters are ignored (later phases add more).
 export const listJobsQuerySchema = z.object({
   since: z.enum(['24h', '2d', '7d', 'all']).default('all'),
@@ -30,6 +42,7 @@ export const listJobsQuerySchema = z.object({
   minScore: z.coerce.number().int().min(0).max(100).optional(),
   level: levelList,
   years: z.coerce.number().min(0).max(60).optional(),
+  favOnly: flag,
   page: z.coerce.number().int().min(1).max(1000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });

@@ -108,3 +108,19 @@ test('a user with only an inactive CV gets match null, and an unknown id gives n
   assert.equal((await getJob(off.id, matched.id)).match, null);
   assert.equal(await getJob(mine.id, 'no-such-job'), null);
 });
+
+test('isFavorite: true when the job\'s company is one of MY favorites (any spelling), false otherwise', async () => {
+  const { mine, other, matched } = await seed(); // the matched job is from "Co"
+  assert.equal((await getJob(mine.id, matched.id)).isFavorite, false);
+
+  await prisma.favoriteCompany.create({
+    data: { userId: mine.id, name: 'CO LIMITED', careersUrl: 'https://example.com/careers' },
+  });
+  assert.equal((await getJob(mine.id, matched.id)).isFavorite, true);
+  assert.equal((await getJob(other.id, matched.id)).isFavorite, false); // my favorite is not theirs
+});
+
+test('toDetail: isFavorite comes from the matcher function', () => {
+  assert.equal(toDetail(row({ company: 'X' }), NOW).isFavorite, false);
+  assert.equal(toDetail(row({ company: 'X' }), NOW, (name) => name === 'X').isFavorite, true);
+});
