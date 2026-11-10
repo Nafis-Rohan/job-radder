@@ -1,5 +1,6 @@
 import { prisma } from '../../shared/db/prisma.js';
 import { logger } from '../../shared/utils/logger.js';
+import { favoriteCompanyNames } from '../companies/companyMatcher.js';
 
 // Keeps the free-tier database small. Runs after every scan.
 export const RETENTION = { jobDays: 60, loginEventDays: 90, keepScanRuns: 100 };
@@ -13,10 +14,25 @@ export function scanRunsToDelete(runs, keep) {
   return runs.slice(keep).filter((run) => run.status !== 'RUNNING').map((run) => run.id);
 }
 
+// Deletes jobs found before `cutoff`, EXCEPT jobs of a company that is a favorite of any user.
+// Names are matched with the same matcher as the jobs list (Ltd, case, aliases), which the database cannot do,
+// so: take the distinct company names of the old jobs, keep the favorite ones, delete the rest.
+async function deleteOldJobs(cutoff) {
+  const old = { foundAt: { lt: cutoff } };
+
+  const favorites = await prisma.favoriteCompany.findMany({ select: { name: true, aliases: true } });
+  let keep = [];
+  if (favorites.length > 0) {
+    const companies = await prisma.job.findMany({ where: old, distinct: ['company'], select: { company: true } });
+    keep = favoriteCompanyNames(companies.map((row) => row.company), favorites);
+  }
+
+  return prisma.job.deleteMany({ where: keep.length > 0 ? { ...old, company: { notIn: keep } } : old });
+}
+
 // Returns how many rows were deleted from each table.
 export async function cleanup({ now = new Date(), retention = RETENTION } = {}) {
-  // Phase 9 (favorites): jobs of a favorite company must be kept. Add that rule here.
-  const jobs = await prisma.job.deleteMany({ where: { foundAt: { lt: daysAgo(retention.jobDays, now) } } });
+  const jobs = await deleteOldJobs(daysAgo(retention.jobDays, now));
 
   const loginEvents = await prisma.loginEvent.deleteMany({
     where: { createdAt: { lt: daysAgo(retention.loginEventDays, now) } },

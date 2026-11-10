@@ -9,9 +9,14 @@ const NOW = new Date('2026-11-08T12:00:00Z');
 
 after(async () => {
   await prisma.job.deleteMany({ where: { source: MARK } });
+  await prisma.job.deleteMany({ where: { source: FAV_MARK } });
+  await prisma.user.deleteMany({ where: { username: FAV_MARK } }); // its favorite goes with it
   await prisma.loginEvent.deleteMany({ where: { username: MARK } });
   await prisma.$disconnect();
 });
+
+// Used by the favorite-company test at the end of this file.
+const FAV_MARK = 'test-cleanupfav';
 
 test('daysAgo goes back whole days', () => {
   assert.equal(daysAgo(60, NOW).toISOString(), '2026-09-09T12:00:00.000Z');
@@ -69,4 +74,49 @@ test('login events older than 90 days are deleted, newer ones stay', async () =>
   });
   await cleanup({ now: NOW });
   assert.equal(await prisma.loginEvent.count({ where: { username: MARK } }), 1);
+});
+
+test('old jobs of a favorite company are kept (any spelling, aliases too); other old jobs are deleted', async () => {
+  const user = await prisma.user.upsert({
+    where: { username: FAV_MARK },
+    update: {},
+    create: { username: FAV_MARK, passwordHash: 'x' },
+  });
+  await prisma.favoriteCompany.create({
+    data: { userId: user.id, name: 'Fav Cleanup Co', aliases: ['FCC'], careersUrl: 'https://example.com/careers' },
+  });
+
+  const oldJob = (n, company) => ({
+    source: FAV_MARK,
+    url: `https://example.com/${FAV_MARK}/${n}`,
+    hash: `${FAV_MARK}-hash-${n}`,
+    title: `Job ${n}`,
+    company,
+    foundAt: daysAgo(100, NOW), // far older than 60 days
+  });
+  await prisma.job.createMany({
+    data: [
+      oldJob(1, 'Fav Cleanup Co'), // the favorite: kept
+      oldJob(2, 'FAV CLEANUP CO LTD.'), // another spelling of it: kept
+      oldJob(3, 'FCC'), // alias: kept
+      oldJob(4, 'Some Other Company'), // not a favorite: deleted
+    ],
+  });
+
+  await cleanup({ now: NOW });
+
+  const left = await prisma.job.findMany({ where: { source: FAV_MARK }, select: { title: true }, orderBy: { title: 'asc' } });
+  assert.deepEqual(left.map((j) => j.title), ['Job 1', 'Job 2', 'Job 3']);
+});
+
+test('an old job of a company that nobody has as a favorite is still deleted', async () => {
+  // the shared database may hold favorites from other tests, so only this test's own row is checked
+  await prisma.job.create({
+    data: {
+      source: MARK, url: `https://example.com/${MARK}/nofav`, hash: `${MARK}-hash-nofav`,
+      title: 'No fav', company: 'Nobody Favors This Ltd', foundAt: daysAgo(100, NOW),
+    },
+  });
+  await cleanup({ now: NOW });
+  assert.equal(await prisma.job.count({ where: { source: MARK, title: 'No fav' } }), 0);
 });
