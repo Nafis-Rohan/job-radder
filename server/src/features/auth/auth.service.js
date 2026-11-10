@@ -3,6 +3,7 @@ import { prisma } from '../../shared/db/prisma.js';
 import { decrypt } from '../../shared/utils/crypto.js';
 import { verifyTempToken } from '../../shared/utils/tokens.js';
 import { verifyCode } from './twoFactor.service.js';
+import { sendLoginAlert } from '../alerts/loginAlert.js';
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MINUTES = 15;
@@ -43,8 +44,12 @@ async function registerFailure(userId) {
 }
 
 // Login is finished (password ok, and 2FA ok if it is on): log it and clear the counters.
-async function completeLogin(user, { ip, userAgent }) {
+// The Telegram login alert is not waited for (Telegram can be slow) and can never fail the login.
+async function completeLogin(user, { ip, userAgent, notify }) {
   await recordEvent({ user, username: user.username, success: true, ip, userAgent });
+  Promise.resolve()
+    .then(() => notify({ user, ip, userAgent }))
+    .catch(() => {});
 
   if (user.failedLogins > 0 || user.lockedUntil) {
     await prisma.user.update({
@@ -56,7 +61,8 @@ async function completeLogin(user, { ip, userAgent }) {
 
 // Step 1: username + password.
 // Returns { status: 'ok' | 'two_factor_required' | 'invalid' | 'locked', user? }
-export async function login({ username, password, ip, userAgent }) {
+// `notify` (the login alert) can be replaced in tests.
+export async function login({ username, password, ip, userAgent, notify = sendLoginAlert }) {
   const user = await prisma.user.findUnique({ where: { username } });
 
   if (isLocked(user)) {
@@ -77,13 +83,13 @@ export async function login({ username, password, ip, userAgent }) {
     return { status: 'two_factor_required', user: publicUser(user) };
   }
 
-  await completeLogin(user, { ip, userAgent });
+  await completeLogin(user, { ip, userAgent, notify });
   return { status: 'ok', user: publicUser(user) };
 }
 
 // Step 2: temp token from step 1 + the 6-digit code from the authenticator app.
 // A wrong code counts as a failed login (same lock rule as a wrong password).
-export async function loginWithTwoFactor({ tempToken, code, ip, userAgent }) {
+export async function loginWithTwoFactor({ tempToken, code, ip, userAgent, notify = sendLoginAlert }) {
   let payload;
   try {
     payload = verifyTempToken(tempToken);
@@ -109,6 +115,6 @@ export async function loginWithTwoFactor({ tempToken, code, ip, userAgent }) {
     return { status: 'invalid' };
   }
 
-  await completeLogin(user, { ip, userAgent });
+  await completeLogin(user, { ip, userAgent, notify });
   return { status: 'ok', user: publicUser(user) };
 }
