@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-export const LEVELS = ['INTERN', 'JUNIOR', 'MID', 'SENIOR', 'LEAD'];
+// UNKNOWN is allowed: many jobs do not say their level, and you may want to list just those.
+export const LEVELS = ['INTERN', 'JUNIOR', 'MID', 'SENIOR', 'LEAD', 'UNKNOWN'];
 
 // ?level=JUNIOR&level=MID  or  ?level=JUNIOR,MID  both work. Case does not matter.
 const levelList = z.preprocess(

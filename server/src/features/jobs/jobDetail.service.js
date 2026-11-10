@@ -1,5 +1,5 @@
 import { prisma } from '../../shared/db/prisma.js';
-import { WEIGHTS } from '../matching/score.js';
+import { effectiveWeights } from '../matching/score.js';
 import { LIST_JOB_FIELDS, NEW_HOURS } from './jobList.service.js';
 
 const HOUR = 60 * 60 * 1000;
@@ -27,8 +27,8 @@ export function toDetail(job, now = new Date()) {
     yearsStated: job.minYears !== null,
     expired: job.deadline !== null && job.deadline.getTime() <= now.getTime(),
     // match = how this job fits the user's active CV. null = it scored under 40, so no match was saved.
-    // stackFit null = the job lists no skills (its weight was shared by the other three).
-    match: match && { ...match, weights: WEIGHTS },
+    // stackFit null = the job lists no skills: the stack weight is 0 and the other three share it.
+    match: match && { ...match, weights: effectiveWeights(match.stackFit !== null) },
   };
 }
 

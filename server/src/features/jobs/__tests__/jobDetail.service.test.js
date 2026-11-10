@@ -23,6 +23,12 @@ test('toDetail: the match comes with the score weights, and "matches" is not in 
   assert.equal('matches' in detail, false);
 });
 
+test('toDetail: with no stackFit the weights show the real split (stack 0)', () => {
+  const match = { total: 70, label: 'GOOD', gaps: [], stackFit: null, expFit: 100, levelFit: 50, domainFit: 100 };
+  const { weights } = toDetail(row({ matches: [match] }), NOW).match;
+  assert.deepEqual(weights, { stack: 0, exp: 0.333, level: 0.333, domain: 0.333 });
+});
+
 test('toDetail: isNew, yearsStated and expired', () => {
   assert.equal(toDetail(row(), NOW).isNew, true);
   assert.equal(toDetail(row({ foundAt: hoursAgo(25) }), NOW).isNew, false);
@@ -86,7 +92,8 @@ test('my job: the long texts and MY full breakdown; no hash', async () => {
   assert.equal(job.match.stackFit, null);
   assert.equal(job.match.expFit, 100);
   assert.deepEqual(job.match.gaps, ['docker']);
-  assert.equal(job.match.weights.stack, 0.4);
+  // this job lists no skills (stackFit null): the stack weight is 0 and the other three share it
+  assert.deepEqual(job.match.weights, { stack: 0, exp: 0.333, level: 0.333, domain: 0.333 });
 });
 
 test('a job I have no match for can still be opened, with match null', async () => {

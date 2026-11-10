@@ -30,8 +30,9 @@ test('level: one value, a comma list, repeated parameters, any letter case', () 
   assert.equal(parse({}).data.level, undefined);
 });
 
-test('level: UNKNOWN and made-up values are rejected', () => {
-  assert.equal(parse({ level: 'UNKNOWN' }).success, false);
+test('level: UNKNOWN is allowed (jobs that do not say their level); made-up values are rejected', () => {
+  assert.deepEqual(parse({ level: 'UNKNOWN' }).data.level, ['UNKNOWN']);
+  assert.deepEqual(parse({ level: 'junior,unknown' }).data.level, ['JUNIOR', 'UNKNOWN']);
   assert.equal(parse({ level: 'JUNIOR,BOSS' }).success, false);
 });
 

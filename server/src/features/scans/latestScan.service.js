@@ -8,7 +8,8 @@ const SCAN_FIELDS = { status: true, startedAt: true, finishedAt: true, newJobs: 
 // A RUNNING scan older than the lock time is dead (the server stopped), so it is shown as FAILED.
 export function buildLatest(latest, lastGood, now = new Date()) {
   let scan = latest;
-  if (scan && scan.status === 'RUNNING' && now.getTime() - scan.startedAt.getTime() > LOCK_MINUTES * 60 * 1000) {
+  // >= like the scanner: at exactly LOCK_MINUTES the lock is already free
+  if (scan && scan.status === 'RUNNING' && now.getTime() - scan.startedAt.getTime() >= LOCK_MINUTES * 60 * 1000) {
     scan = { ...scan, status: 'FAILED' };
   }
   return { scan: scan ?? null, lastSuccessAt: lastGood?.finishedAt ?? null };

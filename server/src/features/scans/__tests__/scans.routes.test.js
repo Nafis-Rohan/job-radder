@@ -27,17 +27,41 @@ test('buildLatest: a scan still RUNNING is shown as running; an old one is dead 
   assert.equal(buildLatest(running, null, NOW).scan.status, 'RUNNING');
   const dead = { ...running, startedAt: minutesAgo(31) };
   assert.equal(buildLatest(dead, null, NOW).scan.status, 'FAILED');
+  // exactly 30 minutes: the scanner already treats the lock as free, so it is dead too
+  assert.equal(buildLatest({ ...running, startedAt: minutesAgo(30) }, null, NOW).scan.status, 'FAILED');
+  assert.equal(buildLatest({ ...running, startedAt: minutesAgo(29) }, null, NOW).scan.status, 'RUNNING');
 });
 
-// ---- database part: the scan table is shared with other tests, so only the shape is checked ----
-test('getLatestScan reads the real database and shows only safe fields', async () => {
-  const { scan, lastSuccessAt } = await getLatestScan();
-  assert.ok(scan === null || typeof scan.status === 'string');
-  if (scan) {
-    assert.deepEqual(Object.keys(scan).sort(), ['finishedAt', 'newJobs', 'startedAt', 'status']);
-    assert.notEqual(scan.status, 'SKIPPED');
+// ---- database part ----
+// The scan table is shared with other tests (they run at the same time). So the rows made here are dated
+// in the year 2099, which makes them the newest of all, and their trigger does not start with "test-"
+// (scan.service.test.js deletes every row with that start).
+const MARK = 'latestscan-check';
+const at = (day) => new Date(`2099-01-0${day}T06:00:00Z`);
+const cleanScans = () => prisma.scanRun.deleteMany({ where: { trigger: MARK } });
+
+test('getLatestScan returns the newest real scan and the last good one, and shows only safe fields', async () => {
+  await cleanScans();
+  try {
+    await prisma.scanRun.createMany({
+      data: [
+        { trigger: MARK, status: 'SUCCESS', startedAt: at(1), finishedAt: new Date('2099-01-01T06:02:00Z'), newJobs: 4, perSource: { secret: 'detail' } },
+        { trigger: MARK, status: 'FAILED', startedAt: at(2), finishedAt: new Date('2099-01-02T06:01:00Z'), newJobs: 0 },
+        { trigger: MARK, status: 'SKIPPED', startedAt: at(3), finishedAt: at(3) }, // not a scan: must be ignored
+      ],
+    });
+
+    const { scan, lastSuccessAt } = await getLatestScan(new Date('2099-01-04T00:00:00Z'));
+    assert.deepEqual(scan, {
+      status: 'FAILED',
+      startedAt: at(2),
+      finishedAt: new Date('2099-01-02T06:01:00Z'),
+      newJobs: 0,
+    });
+    assert.deepEqual(lastSuccessAt, new Date('2099-01-01T06:02:00Z'));
+  } finally {
+    await cleanScans();
   }
-  assert.ok(lastSuccessAt === null || lastSuccessAt instanceof Date);
 });
 
 // ---- routes ----
