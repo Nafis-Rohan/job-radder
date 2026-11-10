@@ -91,6 +91,15 @@ test('non-tech jobs are skipped and counted', () => {
   assert.equal(skipped, 2);
 });
 
+test('keepAllRoles: the non-tech job of a favorite company is kept; without the flag it is skipped', () => {
+  const hr = { ...job, title: 'HR Executive', description: 'Hire people.', url: 'https://example.com/jobs/hr2' };
+  assert.equal(prepareJobs([hr]).rows.length, 0);
+  const kept = prepareJobs([{ ...hr, keepAllRoles: true }]);
+  assert.equal(kept.rows.length, 1);
+  assert.equal(kept.skipped, 0);
+  assert.equal(kept.rows[0].title, 'HR Executive');
+});
+
 test('years asked for are saved as minYears and maxYears', () => {
   const [range] = prepareJobs([{ ...job, description: 'We need 1-3 years with Node.js and Docker.' }]).rows;
   assert.equal(range.minYears, 1);

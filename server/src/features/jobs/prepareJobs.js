@@ -59,8 +59,9 @@ export function prepareJobs(jobs) {
     const skillText = `${text}\n${clean(job.skillTags, 500) ?? ''}`; // + the site's own tags
     const skills = extractSkills(skillText);
 
-    // only tech jobs are kept (saves database space too)
-    if (!isTechJob({ title, skills })) {
+    // only tech jobs are kept (saves database space too), except jobs a collector marks keepAllRoles:
+    // a favorite company's career page: the user wants to hear about every opening there
+    if (!job.keepAllRoles && !isTechJob({ title, skills })) {
       skipped += 1;
       continue;
     }
