@@ -16,6 +16,8 @@ const schema = z
     ENCRYPTION_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, 'must be 64 hex characters'),
     // Secret for POST /api/internal/scan (the outside cron). Not set = that endpoint rejects everyone.
     CRON_SECRET: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
+    // Telegram bot token from @BotFather. Not set = no Telegram message is ever sent (alerts are skipped).
+    TELEGRAM_BOT_TOKEN: z.preprocess(emptyToUndefined, z.string().min(10).optional()),
   })
   .refine((e) => e.NODE_ENV !== 'production' || e.CRON_SECRET, {
     path: ['CRON_SECRET'],

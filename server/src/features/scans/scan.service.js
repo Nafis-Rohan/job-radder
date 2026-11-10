@@ -3,6 +3,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { getCollectors } from '../collectors/index.js';
 import { saveJobs } from '../jobs/jobs.service.js';
 import { scoreNewJobs } from '../matching/match.service.js';
+import { sendFavoriteAlerts } from '../alerts/alert.service.js';
 import { cleanup } from './cleanup.service.js';
 
 // A scan that says RUNNING for longer than this is treated as dead (the server crashed or restarted).
@@ -47,7 +48,7 @@ function finalStatus(failed, total) {
 }
 
 // The work of a scan whose lock is already taken (`run` is its RUNNING row).
-async function executeScan(run, trigger, { collectors, save, clean, match, maxMinutes }) {
+async function executeScan(run, trigger, { collectors, save, clean, match, alert, maxMinutes }) {
   try {
     const perSource = {};
     let newJobs = 0;
@@ -88,11 +89,21 @@ async function executeScan(run, trigger, { collectors, save, clean, match, maxMi
 
     // new jobs are scored against every active CV. The job list stays correct even if this fails
     // (it is repeated after the next scan), so a problem here must not turn a good scan into a failure.
+    let alertsSent = 0;
     if (newJobs > 0) {
+      const since = new Date(run.startedAt.getTime() - 5 * 60 * 1000);
       try {
-        await match({ since: new Date(run.startedAt.getTime() - 5 * 60 * 1000) });
+        await match({ since });
       } catch (err) {
         logger.error({ errMessage: err.message }, 'Scoring new jobs failed');
+      }
+
+      // Telegram: one message per new job of a favorite company. Same rule: a Telegram problem never fails a scan.
+      try {
+        ({ sent: alertsSent } = await alert({ since }));
+        if (alertsSent > 0) await prisma.scanRun.update({ where: { id: run.id }, data: { alertsSent } });
+      } catch (err) {
+        logger.error({ errMessage: err.message }, 'Sending alerts failed');
       }
     }
 
@@ -102,7 +113,7 @@ async function executeScan(run, trigger, { collectors, save, clean, match, maxMi
     } catch (err) {
       logger.error({ errMessage: err.message }, 'Cleanup failed');
     }
-    return { runId: run.id, status, newJobs, perSource };
+    return { runId: run.id, status, newJobs, alertsSent, perSource };
   } catch (err) {
     // never leave a RUNNING row behind: it would block the next scans for 30 minutes
     await prisma.scanRun
@@ -117,6 +128,7 @@ const defaults = () => ({
   save: saveJobs,
   clean: cleanup,
   match: scoreNewJobs,
+  alert: sendFavoriteAlerts,
   maxMinutes: MAX_SCAN_MINUTES,
 });
 
@@ -135,7 +147,7 @@ export async function startScan(trigger, options = {}) {
 
 // Runs every enabled collector once and saves the jobs, and waits for the end.
 // trigger = "cron" | "manual" | "local". One broken source never stops the others.
-// `collectors`, `save`, `clean` and `maxMinutes` can be replaced in tests.
+// `collectors`, `save`, `clean`, `match`, `alert` and `maxMinutes` can be replaced in tests.
 export async function runScan(trigger, options = {}) {
   const started = await startScan(trigger, options);
   if (started.status === 'skipped') {
