@@ -38,6 +38,16 @@ export const adminScanLimiter = rateLimit({
   message: { error: 'Too many scans started. Try again later.' },
 });
 
+// Telegram test messages: 5 per 10 minutes per logged-in user (each one is a real message to a real chat).
+export const telegramTestLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  keyGenerator: (req) => req.user.id,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many test messages. Try again later.' },
+});
+
 // CV uploads: 10 per hour per logged-in user (a PDF is read into memory, so keep it rare).
 export const cvUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

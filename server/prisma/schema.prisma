@@ -64,6 +64,7 @@ model User {
   createdAt      DateTime          @default(now())
   cvs            Cv[]
   favorites      FavoriteCompany[]
+  favoriteAlerts FavoriteAlert[]
 }
 
 model LoginEvent {
@@ -117,6 +118,7 @@ model Job {
   remoteScope    String?
   eligibility    RemoteEligibility?
   matches        Match[]
+  favoriteAlerts FavoriteAlert[]
 
   @@index([foundAt])
   @@index([company])
@@ -172,4 +174,19 @@ model FavoriteCompany {
   createdAt  DateTime @default(now())
 
   @@unique([userId, name])
+}
+
+// "Telegram alert sent": one row per (user, job) of a favorite company, so the same job is never alerted twice.
+// Separate from Match.notified on purpose: a favorite's job may have no Match row (no CV yet).
+// Deleting the job or the user deletes its rows too.
+model FavoriteAlert {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, jobId])
+  @@index([jobId]) // lets "delete old jobs" find their alerts fast
 }
