@@ -117,8 +117,17 @@ test('only 6000 characters of the description are stored, but all of it is read'
   assert.ok(row.skills.includes('node.js'));
 });
 
-test('remote jobs start as UNKNOWN eligibility, other jobs have none', () => {
+test('remote jobs get an eligibility answer, other jobs have none', () => {
   const { rows } = prepareJobs([job, { ...job, url: 'https://example.com/jobs/3', title: 'Office job', isRemote: false }]);
-  assert.equal(rows[0].eligibility, 'UNKNOWN');
+  assert.equal(rows[0].eligibility, 'ELIGIBLE'); // "Anywhere in the World"
   assert.equal(rows[1].eligibility, null);
+});
+
+test('remote eligibility: US only is NOT_ELIGIBLE, no hint is UNKNOWN', () => {
+  const { rows } = prepareJobs([
+    { ...job, url: 'https://example.com/jobs/4', title: 'Backend Engineer A', remoteScope: 'USA only', location: null },
+    { ...job, url: 'https://example.com/jobs/5', title: 'Backend Engineer B', remoteScope: null, location: null },
+  ]);
+  assert.equal(rows[0].eligibility, 'NOT_ELIGIBLE');
+  assert.equal(rows[1].eligibility, 'UNKNOWN');
 });

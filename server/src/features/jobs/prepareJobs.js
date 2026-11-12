@@ -4,6 +4,7 @@ import { extractExperience, extractExperienceRange } from '../matching/extractEx
 import { isTechJob } from './isTechJob.js';
 import { detectLevel } from '../matching/detectLevel.js';
 import { detectDomain } from '../matching/detectDomain.js';
+import { checkRemoteEligibility } from '../matching/remoteEligibility.js';
 
 const LIMITS = { title: 300, company: 200, location: 200, description: 6000, remoteScope: 200 };
 // The text is read in full (up to this size) for skills and years; only 6000 characters are stored.
@@ -84,8 +85,10 @@ export function prepareJobs(jobs) {
       postedAt: validDate(job.postedAt),
       isRemote: Boolean(job.isRemote),
       remoteScope: clean(job.remoteScope, LIMITS.remoteScope),
-      // remote jobs start as UNKNOWN until Phase 12 judges them; other jobs stay empty (NULL)
-      eligibility: job.isRemote ? 'UNKNOWN' : null,
+      // remote jobs: can someone in Bangladesh apply? Other jobs stay empty (NULL)
+      eligibility: job.isRemote
+        ? checkRemoteEligibility({ remoteScope: job.remoteScope, location: job.location, description: fullDescription })
+        : null,
     });
   }
 
