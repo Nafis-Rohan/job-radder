@@ -1,0 +1,53 @@
+{
+  "_help": "Words used by remoteEligibility.js. Add a word here, no code change needed. Everything is lowercase.",
+
+  "restrictedPlaces": [
+    "us", "usa", "u.s.", "u.s.a.", "united states", "united states of america", "america",
+    "north america", "canada", "uk", "u.k.", "united kingdom", "britain", "great britain", "england",
+    "ireland", "eu", "europe", "european union", "emea", "germany", "france", "spain", "italy",
+    "netherlands", "poland", "portugal", "sweden", "norway", "denmark", "finland",
+    "australia", "new zealand", "latam", "latin america", "brazil", "mexico", "argentina"
+  ],
+
+  "notEligibleTemplates": [
+    "{place} only",
+    "only (?:in|from|for) {place}",
+    "{place}[- ]based",
+    "{place} residents?",
+    "{place} citizens?",
+    "{place} time ?zones?",
+    "residents? of {place}",
+    "must (?:be )?(?:located|based|living|residing) in {place}",
+    "must reside in {place}",
+    "(?:authori[sz]ed|eligible|legally entitled) to work in {place}",
+    "anywhere in {place}",
+    "within {place}"
+  ],
+
+  "notEligiblePhrases": [
+    "security clearance",
+    "no visa sponsorship"
+  ],
+
+  "eligiblePhrases": [
+    "worldwide",
+    "world wide",
+    "anywhere in the world",
+    "work from anywhere",
+    "bangladesh"
+  ],
+
+  "eligibleInScopeOnly": [
+    "asia",
+    "apac",
+    "south asia",
+    "global",
+    "globally",
+    "anywhere",
+    "international"
+  ],
+
+  "ignoredScopeWords": ["remote", "fully remote", "work from home", "wfh"],
+
+  "bangladeshUtcOffset": 6
+}
