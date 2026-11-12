@@ -29,7 +29,7 @@ test('posts chat_id and plain text to the bot URL, without parse_mode', async ()
 test('without a token nothing is sent', async () => {
   let called = false;
   const post = async () => (called = true);
-  await assert.rejects(sendTelegram('555', 'Hi', { token: undefined, post }), /not set up/);
+  await assert.rejects(sendTelegram('555', 'Hi', { token: null, post }), /not set up/);
   assert.equal(called, false);
 });
 
