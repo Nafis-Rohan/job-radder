@@ -1,5 +1,6 @@
 import { httpGet } from '../../shared/utils/http.js';
 import { htmlToText } from '../../shared/utils/htmlToText.js';
+import { logger } from '../../shared/utils/logger.js';
 
 const SOURCE = 'remotive';
 
@@ -37,10 +38,27 @@ export function parseResponse(body) {
   });
 }
 
-export default {
-  name: SOURCE,
-  enabled: true,
-  async collect() {
-    return parseResponse(await httpGet(API_URL, { headers: { Accept: 'application/json' } }));
-  },
-};
+// Their limit is about 4 requests a day. Manual scans must not break it: after a request, the next one
+// waits at least 5.5 hours (a scan every 6 hours still gets its jobs). Kept in memory: a server restart
+// resets it, which is fine for one user.
+export const MIN_GAP_MS = 5.5 * 60 * 60 * 1000;
+
+// `get` and `now` can be replaced in tests (no real call, fake clock).
+export function buildRemotive({ get = httpGet, now = Date.now } = {}) {
+  let lastRequestAt = null;
+
+  return {
+    name: SOURCE,
+    enabled: true,
+    async collect() {
+      if (lastRequestAt !== null && now() - lastRequestAt < MIN_GAP_MS) {
+        logger.info({ source: SOURCE }, 'Remotive was asked recently, skipped to respect its request limit');
+        return [];
+      }
+      lastRequestAt = now(); // a failed request counts too
+      return parseResponse(await get(API_URL, { headers: { Accept: 'application/json' } }));
+    },
+  };
+}
+
+export default buildRemotive();

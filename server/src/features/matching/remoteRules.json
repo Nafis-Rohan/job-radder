@@ -34,13 +34,13 @@
     "world wide",
     "anywhere in the world",
     "work from anywhere",
-    "asia",
-    "apac",
-    "south asia",
     "bangladesh"
   ],
 
   "eligibleInScopeOnly": [
+    "asia",
+    "apac",
+    "south asia",
     "global",
     "globally",
     "anywhere",

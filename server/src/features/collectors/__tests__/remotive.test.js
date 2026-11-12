@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseResponse } from '../remotive.js';
+import { parseResponse, buildRemotive, MIN_GAP_MS } from '../remotive.js';
 import { checkRemoteEligibility } from '../../matching/remoteEligibility.js';
 
 const BODY = JSON.stringify({
@@ -70,4 +70,33 @@ test('the location text feeds the eligibility check', () => {
 test('an answer that is not a jobs list is an error', () => {
   assert.throws(() => parseResponse('{"message":"blocked"}'), /no jobs list/);
   assert.throws(() => parseResponse('not json'));
+});
+
+test('a second request inside the limit window is not sent', async () => {
+  let calls = 0;
+  let time = 1_000_000;
+  const remotive = buildRemotive({ get: async () => (calls += 1, BODY), now: () => time });
+
+  assert.equal((await remotive.collect()).length, 3);
+  time += 60_000; // a minute later (a manual scan)
+  assert.deepEqual(await remotive.collect(), []);
+  assert.equal(calls, 1);
+
+  time += MIN_GAP_MS; // the next scheduled scan
+  assert.equal((await remotive.collect()).length, 3);
+  assert.equal(calls, 2);
+});
+
+test('a failed request also starts the wait', async () => {
+  let calls = 0;
+  const remotive = buildRemotive({
+    get: async () => {
+      calls += 1;
+      throw new Error('down');
+    },
+    now: () => 5,
+  });
+  await assert.rejects(remotive.collect(), /down/);
+  assert.deepEqual(await remotive.collect(), []);
+  assert.equal(calls, 1);
 });

@@ -86,8 +86,13 @@ export function prepareJobs(jobs) {
       isRemote: Boolean(job.isRemote),
       remoteScope: clean(job.remoteScope, LIMITS.remoteScope),
       // remote jobs: can someone in Bangladesh apply? Other jobs stay empty (NULL)
+      // (judged on the same cut-down text that is stored, so recheckEligibility.js gives the same answer)
       eligibility: job.isRemote
-        ? checkRemoteEligibility({ remoteScope: job.remoteScope, location: job.location, description: fullDescription })
+        ? checkRemoteEligibility({
+            remoteScope: clean(job.remoteScope, LIMITS.remoteScope),
+            location,
+            description: fullDescription?.slice(0, LIMITS.description),
+          })
         : null,
     });
   }

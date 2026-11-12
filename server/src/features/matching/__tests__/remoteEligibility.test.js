@@ -72,3 +72,20 @@ test('the location is not used for the list rule when a scope exists', () => {
 test('words inside other words do not count', () => {
   assert.equal(check('Remote', { description: 'Business hours in Pacific Asian markets' }), 'UNKNOWN');
 });
+
+test('timezone minutes are compared too', () => {
+  assert.equal(check('UTC+5:30 to UTC+8'), 'ELIGIBLE');
+  assert.equal(check('UTC+6:30 to UTC+9'), 'NOT_ELIGIBLE');
+  assert.equal(check('GMT-3:30 to GMT+5:45'), 'NOT_ELIGIBLE');
+});
+
+test('weak words in a description do not make a job eligible', () => {
+  assert.equal(check('Remote', { description: 'We have offices in Asia and APAC.' }), 'UNKNOWN');
+  assert.equal(check('', { description: 'We hire anywhere. International team.' }), 'UNKNOWN');
+});
+
+test('the company location does not override an open scope', () => {
+  assert.equal(check('Worldwide', { location: 'US-based' }), 'ELIGIBLE');
+  assert.equal(check('Worldwide', { location: 'USA Only' }), 'ELIGIBLE');
+  assert.equal(check('', { location: 'USA Only' }), 'NOT_ELIGIBLE');
+});
